@@ -110,6 +110,27 @@ Examples (under `crates/transonic-client/examples/`):
 | `demuxtomultichannel`          | Interleaved multichannel → many mono streams.                |
 | `passthroughdecoder`           | Transitional passthrough "decoder" + typefinder.             |
 
+## Quick start (Docker Compose)
+
+The whole stack — the transform service, the TTS web demo, Prometheus and a
+provisioned Grafana — comes up with one command:
+
+```sh
+docker compose up --build
+```
+
+Then open:
+
+* `http://localhost:8093` — the TTS streaming demo (pick a sample, an encoding
+  and a pace; the *Bursty (TTS-like)* pace shows the back-pressure signal
+  toggling between `ENOUGH_DATA` and `NEED_DATA`);
+* `http://localhost:3000` — Grafana (anonymous admin), dashboard **Transonic**;
+* `http://localhost:9090` — Prometheus.
+
+The compose file uses host networking (Linux), so the shipped `deploy/` configs
+work unchanged.  The service runs the `tts_demo.json` pipeline set; edit
+`docker-compose.yml` to point `TRANSONIC_CONFIG_PATH` at another config.
+
 ## Building
 
 System dependencies (Debian/Ubuntu):
@@ -157,8 +178,10 @@ under a concurrency soak) with no measurable throughput cost.
 
 ### Monitoring stack (Prometheus + Grafana)
 
-`deploy/` ships a ready-to-run Prometheus scrape config and a provisioned
-Grafana dashboard.  With the service exposing metrics on `127.0.0.1:18330`:
+`docker compose up` (see [Quick start](#quick-start-docker-compose)) already
+wires this together.  To run it by hand instead, `deploy/` ships a ready-to-run
+Prometheus scrape config and a provisioned Grafana dashboard.  With the service
+exposing metrics on `127.0.0.1:18330`:
 
 ```sh
 # Prometheus — scrapes the service (shares the host network to reach it)
@@ -193,6 +216,9 @@ bidi stream produces — progress, media properties and the
 which the page surfaces live.  Pick *As fast as possible* to flood the
 pipeline and watch it push back.  Codecs the browser can't play through MSE
 fall back to a plain chunked-HTTP `<audio src>` with polled metrics.
+
+`docker compose up` serves this at `http://localhost:8093`.  To run it
+standalone:
 
 ```sh
 # Terminal 1: the transform service with the TTS pipeline set

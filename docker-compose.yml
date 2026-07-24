@@ -1,0 +1,53 @@
+# Full local stack: transform service + TTS web demo + Prometheus + Grafana.
+#
+#   docker compose up --build
+#
+# Then open:
+#   http://localhost:8093  — the TTS streaming demo
+#   http://localhost:3000  — Grafana (anonymous admin), dashboard "Transonic"
+#   http://localhost:9090  — Prometheus
+#
+# Host networking (Linux) is used so the shipped deploy/ configs work
+# unchanged: Prometheus scrapes 127.0.0.1:18330 and Grafana's datasource
+# points at localhost:9090, exactly as in the manual instructions.
+services:
+  transonic:
+    build:
+      context: .
+      target: runtime
+    image: transonic:local
+    network_mode: host
+    environment:
+      TRANSONIC_CONFIG_PATH: /etc/transonic/tts_demo.json
+      TRANSONIC_ENDPOINT: 0.0.0.0:15330
+      PROMETHEUS_PORT: 0.0.0.0:18330
+      MALLOC_ARENA_MAX: "2"
+    restart: unless-stopped
+
+  demo:
+    build:
+      context: .
+      target: demo
+    image: transonic-demo:local
+    network_mode: host
+    depends_on:
+      - transonic
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus
+    network_mode: host
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana
+    network_mode: host
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/etc/grafana/dashboards:ro
+    restart: unless-stopped

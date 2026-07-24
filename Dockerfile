@@ -13,8 +13,26 @@ WORKDIR /src
 COPY . .
 RUN cargo build --release --workspace
 
-# Runtime stage
-FROM debian:bookworm-slim
+# Demo build stage: reuse the primary build's cache and additionally compile
+# the `demo` example (only pulled in by the `demo` image target below, so the
+# production image never pays for it).
+FROM build AS demo-build
+RUN cargo build --release -p transonic-client --example demo
+
+# Demo runtime: the TTS web demo is a gRPC client + web server, so it needs no
+# GStreamer plugins — just the binary and the bundled PCM samples.
+FROM debian:bookworm-slim AS demo
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=demo-build /src/target/release/examples/demo /usr/local/bin/transonic-demo
+COPY testdata /data
+EXPOSE 8093
+ENTRYPOINT ["/usr/local/bin/transonic-demo"]
+CMD ["--listen", "0.0.0.0:8093", "--transform", "http://127.0.0.1:15330", "--data", "/data"]
+
+# Runtime stage (default target: the production service image).
+FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libgstreamer1.0-0 \
