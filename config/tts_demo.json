@@ -7,9 +7,9 @@
       }
     },
     {
-      "description": "Default input buffer of 2MB",
+      "description": "256 KiB input soft limit: small enough that the demo's 'as fast as possible' flood overruns it for every sample, so the ENOUGH_DATA back-pressure signal is visible (hard limit is 4x this)",
       "default": {
-        "pipelineInputBuffer": 2097152
+        "pipelineInputBuffer": 262144
       }
     },
     {
