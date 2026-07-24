@@ -93,6 +93,7 @@
         <label for="pace">TTS generation pace</label>
         <select id="pace">
           <option value="off">As fast as possible</option>
+          <option value="burst">Bursty (TTS-like)</option>
           <option value="1" selected>1× realtime (live TTS)</option>
           <option value="2">2× realtime</option>
           <option value="5">5× realtime</option>
@@ -123,8 +124,11 @@
     </div>
     <p class="note">
       "Backpressure" reflects the gRPC <code>FlowControlNotification</code>s pushed over
-      the WebSocket: pick <b>As fast as possible</b> to flood the pipeline and watch it
-      toggle between <code>ENOUGH_DATA</code> (pause) and <code>NEED_DATA</code> (resume).
+      the WebSocket.  <b>As fast as possible</b> floods the pipeline →
+      <code>ENOUGH_DATA</code> (slow down); a <b>realtime</b> pace keeps it fed →
+      <code>NEED_DATA</code> (send more); <b>Bursty (TTS-like)</b> alternates — each
+      burst overruns the input buffer (<code>ENOUGH_DATA</code>) and each pause starves
+      it (<code>NEED_DATA</code>), like a model emitting utterances with gaps.
     </p>
   </div>
 

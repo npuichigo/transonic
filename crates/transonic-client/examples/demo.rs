@@ -258,6 +258,29 @@ impl ProgressCell {
 // shared transform plumbing
 ///////////////////////////////////////////////////////////////////////////
 
+/// How the producer paces PCM into the pipeline.
+#[derive(Clone, Copy, Debug)]
+enum Pace {
+    /// Push everything as fast as the pipeline accepts it.
+    Fast,
+    /// Push at a steady multiple of realtime (1.0 = live TTS).
+    Realtime(f64),
+    /// Push a burst, pause, repeat — like a TTS model that emits an utterance,
+    /// thinks, then emits the next.  Bursts overrun the input soft limit
+    /// (ENOUGH_DATA) and the pauses let the pipeline starve (NEED_DATA), so the
+    /// back-pressure signal visibly alternates.
+    Burst,
+}
+
+/// Parses the `pace` query parameter into a [`Pace`].
+fn parse_pace(value: Option<&str>) -> Result<Pace, ()> {
+    match value {
+        None | Some("off") => Ok(Pace::Fast),
+        Some("burst") => Ok(Pace::Burst),
+        Some(other) => other.parse::<f64>().map(Pace::Realtime).map_err(|_| ()),
+    }
+}
+
 /// Builds the `TransformConfig` for one TTS request: a single PCM input
 /// channel and a single encoded output channel with the bitrate substituted
 /// into the pipeline template.
@@ -286,15 +309,22 @@ fn build_config(input_bin: &str, output_bin: &str, bitrate: u32) -> proto::Trans
 fn spawn_producer(
     request_tx: tokio::sync::mpsc::Sender<proto::TransformRequest>,
     sample: Sample,
-    pace_multiple: Option<f64>,
+    pace: Pace,
     on_sent: impl Fn(u64) + Send + 'static,
 ) {
+    // Burst mode: emit roughly this many PCM bytes at full speed (enough to
+    // overrun the demo's input soft limit) then pause before the next burst.
+    const BURST_BYTES: usize = 350_000;
+    const BURST_PAUSE: Duration = Duration::from_millis(600);
+
     tokio::spawn(async move {
         let chunk_bytes = (sample.sample_rate * sample.bytes_per_frame / 50) as usize;
         let chunk_media_time = Duration::from_millis(20);
         let mut offset = 0usize;
+        let mut burst_sent = 0usize;
         while offset < sample.data.len() {
             let end = (offset + chunk_bytes).min(sample.data.len());
+            let piece_len = end - offset;
             let request = proto::TransformRequest {
                 channel_id: "tts-pcm".to_string(),
                 request: Some(proto::transform_request::Request::Payload(
@@ -308,9 +338,18 @@ fn spawn_producer(
             }
             offset = end;
             on_sent(offset as u64);
-            if let Some(multiple) = pace_multiple {
-                if multiple > 0.0 {
+            match pace {
+                Pace::Fast => {}
+                Pace::Realtime(multiple) if multiple > 0.0 => {
                     tokio::time::sleep(chunk_media_time.div_f64(multiple)).await;
+                }
+                Pace::Realtime(_) => {}
+                Pace::Burst => {
+                    burst_sent += piece_len;
+                    if burst_sent >= BURST_BYTES {
+                        burst_sent = 0;
+                        tokio::time::sleep(BURST_PAUSE).await;
+                    }
                 }
             }
         }
@@ -364,8 +403,8 @@ struct StreamParams {
     bitrate: Option<u32>,
     /// Page-supplied session id for server-side metrics correlation.
     session: Option<String>,
-    /// TTS generation pace: "off" (as fast as possible) or a realtime
-    /// multiple such as "1", "2", "5".
+    /// TTS generation pace: "off" (as fast as possible), "burst" (bursty,
+    /// TTS-like) or a realtime multiple such as "1", "2", "5".
     pace: Option<String>,
 }
 
@@ -387,14 +426,8 @@ async fn stream(
     if !output.bitrates.contains(&bitrate) {
         return Err((StatusCode::BAD_REQUEST, "unsupported bitrate".to_string()));
     }
-    let pace_multiple: Option<f64> = match params.pace.as_deref() {
-        None | Some("off") => None,
-        Some(value) => Some(
-            value
-                .parse()
-                .map_err(|_| (StatusCode::BAD_REQUEST, "invalid pace".to_string()))?,
-        ),
-    };
+    let pace = parse_pace(params.pace.as_deref())
+        .map_err(|_| (StatusCode::BAD_REQUEST, "invalid pace".to_string()))?;
 
     // Register server-side metrics for this session.
     let bitrate_bps = if output.mime == "audio/mpeg" {
@@ -426,7 +459,7 @@ async fn stream(
         sample = sample.id,
         output = output.id,
         bitrate,
-        pace = ?pace_multiple,
+        pace = ?pace,
         "starting transform"
     );
 
@@ -451,7 +484,7 @@ async fn stream(
 
     // Producer task: emit 20 ms PCM chunks like a streaming TTS engine.
     let producer_cell = Arc::clone(&cell);
-    spawn_producer(request_tx, sample.clone(), pace_multiple, move |sent| {
+    spawn_producer(request_tx, sample.clone(), pace, move |sent| {
         producer_cell.lock().unwrap().data.input_bytes_sent = sent;
     });
 
@@ -579,14 +612,11 @@ async fn ws_handler(
     if !output.bitrates.contains(&bitrate) {
         return (StatusCode::BAD_REQUEST, "unsupported bitrate").into_response();
     }
-    let pace_multiple = match params.pace.as_deref() {
-        None | Some("off") => None,
-        Some(value) => match value.parse::<f64>() {
-            Ok(multiple) => Some(multiple),
-            Err(_) => return (StatusCode::BAD_REQUEST, "invalid pace").into_response(),
-        },
+    let pace = match parse_pace(params.pace.as_deref()) {
+        Ok(pace) => pace,
+        Err(_) => return (StatusCode::BAD_REQUEST, "invalid pace").into_response(),
     };
-    ws.on_upgrade(move |socket| ws_session(socket, state, sample, output, bitrate, pace_multiple))
+    ws.on_upgrade(move |socket| ws_session(socket, state, sample, output, bitrate, pace))
 }
 
 /// A JSON progress event mirroring the fields the fallback `/api/progress`
@@ -635,7 +665,7 @@ async fn ws_session(
     sample: Sample,
     output: OutputFormat,
     bitrate: u32,
-    pace_multiple: Option<f64>,
+    pace: Pace,
 ) {
     let (mut sink, mut stream) = socket.split();
 
@@ -653,7 +683,7 @@ async fn ws_session(
         sample = sample.id,
         output = output.id,
         bitrate,
-        pace = ?pace_multiple,
+        pace = ?pace,
         "starting transform (ws)"
     );
 
@@ -691,7 +721,7 @@ async fn ws_session(
         let input_sent = Arc::new(AtomicU64::new(0));
         {
             let input_sent = Arc::clone(&input_sent);
-            spawn_producer(request_tx, sample.clone(), pace_multiple, move |sent| {
+            spawn_producer(request_tx, sample.clone(), pace, move |sent| {
                 input_sent.store(sent, Ordering::Relaxed);
             });
         }

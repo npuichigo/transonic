@@ -7,9 +7,9 @@
       }
     },
     {
-      "description": "256 KiB input soft limit: small enough that the demo's 'as fast as possible' flood overruns it for every sample, so the ENOUGH_DATA back-pressure signal is visible (hard limit is 4x this)",
+      "description": "64 KiB input soft limit: small enough that both the flood and each individual burst overrun it, so ENOUGH_DATA fires for every sample and re-fires on every burst (hard limit is 4x this)",
       "default": {
-        "pipelineInputBuffer": 262144
+        "pipelineInputBuffer": 65536
       }
     },
     {
