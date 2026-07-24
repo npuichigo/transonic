@@ -3,25 +3,40 @@
 //! Simulates a TTS engine: raw PCM utterances (from the bundled test data)
 //! are streamed into the Transonic service over gRPC, transcoded to MP3 or
 //! WebM/Opus at a selectable sample rate and bitrate, and the encoded stream
-//! is forwarded to the browser as a chunked HTTP response that the `<audio>`
-//! element plays progressively — audio starts before "synthesis" finishes.
+//! is forwarded to the browser and the `<audio>` element plays it
+//! progressively — audio starts before "synthesis" finishes.
+//!
+//! Two transports carry the encoded stream to the browser:
+//! * `GET /ws?...` — a WebSocket that pushes encoded audio (binary frames)
+//!   interleaved with JSON events (progress, media properties and, crucially,
+//!   the gRPC `FlowControlNotification` back-pressure signals).  This is the
+//!   primary path and mirrors the bidirectional gRPC stream one-to-one.
+//! * `GET /stream?...` — a plain chunked HTTP response used as a fallback for
+//!   codecs the browser can't play through MSE; server-side metrics are then
+//!   polled from `GET /api/progress`.
 //!
 //! Endpoints:
 //! * `GET /`            — the demo page.
 //! * `GET /api/catalog` — available PCM samples and output formats.
-//! * `GET /stream?...`  — the transcoded audio stream.
+//! * `GET /ws?...`      — the transcoded audio stream + events (WebSocket).
+//! * `GET /stream?...`  — the transcoded audio stream (chunked HTTP fallback).
+//! * `GET /api/progress`— server-side metrics for the fallback path.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use bytes::Bytes;
 use clap::Parser;
+use futures::{SinkExt, StreamExt};
+use serde_json::json;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, info};
 
@@ -240,6 +255,77 @@ impl ProgressCell {
 }
 
 ///////////////////////////////////////////////////////////////////////////
+// shared transform plumbing
+///////////////////////////////////////////////////////////////////////////
+
+/// Builds the `TransformConfig` for one TTS request: a single PCM input
+/// channel and a single encoded output channel with the bitrate substituted
+/// into the pipeline template.
+fn build_config(input_bin: &str, output_bin: &str, bitrate: u32) -> proto::TransformConfig {
+    proto::TransformConfig {
+        pipeline_name: "tts".to_string(),
+        inputs: vec![proto::ChannelSpecifier {
+            channel_id: "tts-pcm".to_string(),
+            pipeline_bin_id: input_bin.to_string(),
+            pipeline_parameters: Default::default(),
+            metadata: Default::default(),
+        }],
+        outputs: vec![proto::ChannelSpecifier {
+            channel_id: "encoded".to_string(),
+            pipeline_bin_id: output_bin.to_string(),
+            pipeline_parameters: HashMap::from([("bitrate".to_string(), bitrate.to_string())]),
+            metadata: Default::default(),
+        }],
+        parameter_overrides: vec![],
+    }
+}
+
+/// Spawns the producer task: emits 20 ms PCM chunks like a streaming TTS
+/// engine, optionally paced at a realtime multiple.  `on_sent` is invoked with
+/// the running count of PCM bytes handed to the request stream.
+fn spawn_producer(
+    request_tx: tokio::sync::mpsc::Sender<proto::TransformRequest>,
+    sample: Sample,
+    pace_multiple: Option<f64>,
+    on_sent: impl Fn(u64) + Send + 'static,
+) {
+    tokio::spawn(async move {
+        let chunk_bytes = (sample.sample_rate * sample.bytes_per_frame / 50) as usize;
+        let chunk_media_time = Duration::from_millis(20);
+        let mut offset = 0usize;
+        while offset < sample.data.len() {
+            let end = (offset + chunk_bytes).min(sample.data.len());
+            let request = proto::TransformRequest {
+                channel_id: "tts-pcm".to_string(),
+                request: Some(proto::transform_request::Request::Payload(
+                    proto::InputChannelPayload {
+                        chunk_list: vec![sample.data.slice(offset..end)],
+                    },
+                )),
+            };
+            if request_tx.send(request).await.is_err() {
+                return; // Listener went away.
+            }
+            offset = end;
+            on_sent(offset as u64);
+            if let Some(multiple) = pace_multiple {
+                if multiple > 0.0 {
+                    tokio::time::sleep(chunk_media_time.div_f64(multiple)).await;
+                }
+            }
+        }
+        let _ = request_tx
+            .send(proto::TransformRequest {
+                channel_id: "tts-pcm".to_string(),
+                request: Some(proto::transform_request::Request::ChannelCompleted(
+                    proto::ChannelCompleted {},
+                )),
+            })
+            .await;
+    });
+}
+
+///////////////////////////////////////////////////////////////////////////
 // handlers
 ///////////////////////////////////////////////////////////////////////////
 
@@ -354,22 +440,7 @@ async fn stream(
 
     // Request stream: config, paced PCM payloads, channel completion.
     let (request_tx, request_rx) = tokio::sync::mpsc::channel::<proto::TransformRequest>(16);
-    let config = proto::TransformConfig {
-        pipeline_name: "tts".to_string(),
-        inputs: vec![proto::ChannelSpecifier {
-            channel_id: "tts-pcm".to_string(),
-            pipeline_bin_id: sample.input_bin.to_string(),
-            pipeline_parameters: Default::default(),
-            metadata: Default::default(),
-        }],
-        outputs: vec![proto::ChannelSpecifier {
-            channel_id: "encoded".to_string(),
-            pipeline_bin_id: output.output_bin.to_string(),
-            pipeline_parameters: HashMap::from([("bitrate".to_string(), bitrate.to_string())]),
-            metadata: Default::default(),
-        }],
-        parameter_overrides: vec![],
-    };
+    let config = build_config(sample.input_bin, output.output_bin, bitrate);
     request_tx
         .send(proto::TransformRequest {
             channel_id: String::new(),
@@ -379,42 +450,9 @@ async fn stream(
         .map_err(internal)?;
 
     // Producer task: emit 20 ms PCM chunks like a streaming TTS engine.
-    let producer_sample = sample.clone();
     let producer_cell = Arc::clone(&cell);
-    tokio::spawn(async move {
-        let chunk_bytes =
-            (producer_sample.sample_rate * producer_sample.bytes_per_frame / 50) as usize;
-        let chunk_media_time = Duration::from_millis(20);
-        let mut offset = 0usize;
-        while offset < producer_sample.data.len() {
-            let end = (offset + chunk_bytes).min(producer_sample.data.len());
-            let request = proto::TransformRequest {
-                channel_id: "tts-pcm".to_string(),
-                request: Some(proto::transform_request::Request::Payload(
-                    proto::InputChannelPayload {
-                        chunk_list: vec![producer_sample.data.slice(offset..end)],
-                    },
-                )),
-            };
-            if request_tx.send(request).await.is_err() {
-                return; // Listener went away.
-            }
-            offset = end;
-            producer_cell.lock().unwrap().data.input_bytes_sent = offset as u64;
-            if let Some(multiple) = pace_multiple {
-                if multiple > 0.0 {
-                    tokio::time::sleep(chunk_media_time.div_f64(multiple)).await;
-                }
-            }
-        }
-        let _ = request_tx
-            .send(proto::TransformRequest {
-                channel_id: "tts-pcm".to_string(),
-                request: Some(proto::transform_request::Request::ChannelCompleted(
-                    proto::ChannelCompleted {},
-                )),
-            })
-            .await;
+    spawn_producer(request_tx, sample.clone(), pace_multiple, move |sent| {
+        producer_cell.lock().unwrap().data.input_bytes_sent = sent;
     });
 
     let mut request = tonic::Request::new(ReceiverStream::new(request_rx));
@@ -517,6 +555,298 @@ async fn progress(
     Ok(axum::Json(snapshot))
 }
 
+///////////////////////////////////////////////////////////////////////////
+// websocket transport
+///////////////////////////////////////////////////////////////////////////
+
+/// Upgrades to a WebSocket that streams the transcoded audio and events.
+/// Parameters are validated before the upgrade so a bad request still yields a
+/// normal HTTP error.
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<StreamParams>,
+) -> Response {
+    let sample = match state.samples.get(params.sample.as_str()) {
+        Some(sample) => sample.clone(),
+        None => return (StatusCode::NOT_FOUND, "unknown sample").into_response(),
+    };
+    let output = match state.outputs.get(params.output.as_str()) {
+        Some(output) => output.clone(),
+        None => return (StatusCode::NOT_FOUND, "unknown output format").into_response(),
+    };
+    let bitrate = params.bitrate.unwrap_or(output.default_bitrate);
+    if !output.bitrates.contains(&bitrate) {
+        return (StatusCode::BAD_REQUEST, "unsupported bitrate").into_response();
+    }
+    let pace_multiple = match params.pace.as_deref() {
+        None | Some("off") => None,
+        Some(value) => match value.parse::<f64>() {
+            Ok(multiple) => Some(multiple),
+            Err(_) => return (StatusCode::BAD_REQUEST, "invalid pace").into_response(),
+        },
+    };
+    ws.on_upgrade(move |socket| ws_session(socket, state, sample, output, bitrate, pace_multiple))
+}
+
+/// A JSON progress event mirroring the fields the fallback `/api/progress`
+/// endpoint returns, so the page can drive the same metric widgets.
+#[allow(clippy::too_many_arguments)]
+fn progress_event(
+    first_chunk_ms: Option<f64>,
+    elapsed_ms: f64,
+    output_bytes: u64,
+    output_chunks: u64,
+    input_bytes_sent: u64,
+    input_bytes_total: u64,
+    bitrate_bps: u64,
+    source_seconds: f64,
+    enough_count: u64,
+    need_count: u64,
+) -> Message {
+    Message::Text(
+        json!({
+            "type": "progress",
+            "transform_first_chunk_ms": first_chunk_ms,
+            "elapsed_ms": elapsed_ms,
+            "output_bytes": output_bytes,
+            "output_chunks": output_chunks,
+            "input_bytes_sent": input_bytes_sent,
+            "input_bytes_total": input_bytes_total,
+            "bitrate_bps": bitrate_bps,
+            "source_seconds": source_seconds,
+            "enough_count": enough_count,
+            "need_count": need_count,
+        })
+        .to_string(),
+    )
+}
+
+fn error_event<E: std::fmt::Display>(error: &E) -> Message {
+    Message::Text(json!({ "type": "error", "message": error.to_string() }).to_string())
+}
+
+/// Runs one transform over a WebSocket: opens the gRPC bidi stream, forwards
+/// encoded audio as binary frames and every other response (progress, flow
+/// control, media properties, completion, errors) as JSON text frames.
+async fn ws_session(
+    socket: WebSocket,
+    state: Arc<AppState>,
+    sample: Sample,
+    output: OutputFormat,
+    bitrate: u32,
+    pace_multiple: Option<f64>,
+) {
+    let (mut sink, mut stream) = socket.split();
+
+    let bitrate_bps = if output.mime == "audio/mpeg" {
+        u64::from(bitrate) * 1000
+    } else {
+        u64::from(bitrate)
+    };
+    let source_seconds =
+        sample.data.len() as f64 / f64::from(sample.sample_rate * sample.bytes_per_frame);
+    let input_bytes_total = sample.data.len() as u64;
+    let request_id = format!("demo-{}", uuid::Uuid::new_v4());
+    info!(
+        request = %request_id,
+        sample = sample.id,
+        output = output.id,
+        bitrate,
+        pace = ?pace_multiple,
+        "starting transform (ws)"
+    );
+
+    // Drives the transform and writes all frames into the WebSocket sink.
+    let produce = async {
+        let channel =
+            match tonic::transport::Endpoint::from_shared(state.transform_endpoint.clone()) {
+                Ok(endpoint) => match endpoint.connect().await {
+                    Ok(channel) => channel,
+                    Err(e) => {
+                        let _ = sink.send(error_event(&e)).await;
+                        return;
+                    }
+                },
+                Err(e) => {
+                    let _ = sink.send(error_event(&e)).await;
+                    return;
+                }
+            };
+        let mut client = proto::transform_service_client::TransformServiceClient::new(channel);
+
+        let (request_tx, request_rx) = tokio::sync::mpsc::channel::<proto::TransformRequest>(16);
+        let config = build_config(sample.input_bin, output.output_bin, bitrate);
+        if request_tx
+            .send(proto::TransformRequest {
+                channel_id: String::new(),
+                request: Some(proto::transform_request::Request::Config(config)),
+            })
+            .await
+            .is_err()
+        {
+            return;
+        }
+
+        let input_sent = Arc::new(AtomicU64::new(0));
+        {
+            let input_sent = Arc::clone(&input_sent);
+            spawn_producer(request_tx, sample.clone(), pace_multiple, move |sent| {
+                input_sent.store(sent, Ordering::Relaxed);
+            });
+        }
+
+        let mut request = tonic::Request::new(ReceiverStream::new(request_rx));
+        if let Ok(value) = request_id.parse() {
+            request.metadata_mut().insert("request_id", value);
+        }
+        let mut responses = match client.transform(request).await {
+            Ok(response) => response.into_inner(),
+            Err(status) => {
+                let _ = sink.send(error_event(&status)).await;
+                return;
+            }
+        };
+
+        let started = std::time::Instant::now();
+        let mut output_bytes = 0u64;
+        let mut output_chunks = 0u64;
+        let mut first_chunk_ms: Option<f64> = None;
+        let mut enough_count = 0u64;
+        let mut need_count = 0u64;
+        let mut termination: Option<String> = None;
+        // Throttle progress pushes; encoded payloads can arrive far faster
+        // than the page needs to repaint.
+        let mut last_progress = started;
+
+        loop {
+            match responses.message().await {
+                Ok(Some(response)) => match response.response {
+                    Some(proto::transform_response::Response::Payload(payload)) => {
+                        if first_chunk_ms.is_none() {
+                            first_chunk_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+                        }
+                        for chunk in payload.chunk_list {
+                            output_chunks += 1;
+                            output_bytes += chunk.len() as u64;
+                            if sink.send(Message::Binary(chunk.to_vec())).await.is_err() {
+                                return;
+                            }
+                        }
+                        if last_progress.elapsed() >= Duration::from_millis(100) {
+                            last_progress = std::time::Instant::now();
+                            let event = progress_event(
+                                first_chunk_ms,
+                                started.elapsed().as_secs_f64() * 1000.0,
+                                output_bytes,
+                                output_chunks,
+                                input_sent.load(Ordering::Relaxed),
+                                input_bytes_total,
+                                bitrate_bps,
+                                source_seconds,
+                                enough_count,
+                                need_count,
+                            );
+                            if sink.send(event).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    Some(proto::transform_response::Response::FlowControlNotification(fc)) => {
+                        let kind = match fc.notification_type() {
+                            proto::FlowControlNotificationType::EnoughData => {
+                                enough_count += 1;
+                                "enough_data"
+                            }
+                            proto::FlowControlNotificationType::NeedData => {
+                                need_count += 1;
+                                "need_data"
+                            }
+                        };
+                        let event = json!({
+                            "type": "flow_control",
+                            "kind": kind,
+                            "enough_count": enough_count,
+                            "need_count": need_count,
+                        })
+                        .to_string();
+                        if sink.send(Message::Text(event)).await.is_err() {
+                            return;
+                        }
+                    }
+                    Some(proto::transform_response::Response::MediaProperties(media)) => {
+                        if let Some(proto::media_properties::Properties::AudioProperties(audio)) =
+                            media.properties
+                        {
+                            let event = json!({
+                                "type": "media_properties",
+                                "encoding": audio.encoding,
+                                "sample_rate": audio.sample_rate,
+                                "sample_type": audio.sample_type,
+                                "channels": audio.channels,
+                            })
+                            .to_string();
+                            if sink.send(Message::Text(event)).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    Some(proto::transform_response::Response::TransformCompleted(done)) => {
+                        termination = Some(format!("{:?}", done.termination_reason()));
+                    }
+                    _ => {}
+                },
+                Ok(None) => {
+                    let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+                    let _ = sink
+                        .send(progress_event(
+                            first_chunk_ms,
+                            elapsed_ms,
+                            output_bytes,
+                            output_chunks,
+                            input_sent.load(Ordering::Relaxed),
+                            input_bytes_total,
+                            bitrate_bps,
+                            source_seconds,
+                            enough_count,
+                            need_count,
+                        ))
+                        .await;
+                    let event = json!({
+                        "type": "completed",
+                        "termination": termination,
+                        "elapsed_ms": elapsed_ms,
+                    })
+                    .to_string();
+                    let _ = sink.send(Message::Text(event)).await;
+                    let _ = sink.send(Message::Close(None)).await;
+                    return;
+                }
+                Err(status) => {
+                    error!(request = %request_id, status = %status, "transform failed (ws)");
+                    let _ = sink.send(error_event(&status)).await;
+                    return;
+                }
+            }
+        }
+    };
+
+    // Resolves when the browser closes the socket, so we can abort the
+    // transform promptly instead of running it to completion unseen.
+    let closed = async {
+        while let Some(Ok(message)) = stream.next().await {
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
+        }
+    };
+
+    tokio::select! {
+        _ = produce => {}
+        _ = closed => info!(request = %request_id, "client closed the stream"),
+    }
+}
+
 fn internal<E: std::fmt::Display>(error: E) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
 }
@@ -567,6 +897,7 @@ async fn main() -> Result<(), String> {
         .route("/", axum::routing::get(index))
         .route("/api/catalog", axum::routing::get(catalog))
         .route("/api/progress", axum::routing::get(progress))
+        .route("/ws", axum::routing::get(ws_handler))
         .route("/stream", axum::routing::get(stream))
         .with_state(state);
 

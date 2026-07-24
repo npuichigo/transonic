@@ -183,8 +183,16 @@ throughput-by-outcome / concurrency time series).
 A web demo simulating the TTS scenario — a producer emits raw PCM (from
 `testdata/`, in 20 ms chunks, optionally paced at 1× realtime like a live
 TTS engine), Transonic transcodes it to MP3 or WebM/Opus at a selectable
-sample rate and bitrate, and the browser plays the chunked stream while it
-is still being generated:
+sample rate and bitrate, and the browser plays the stream while it is still
+being generated.
+
+The encoded audio reaches the browser over a **WebSocket**: binary frames
+carry the audio and interleaved JSON frames carry the same events the gRPC
+bidi stream produces — progress, media properties and the
+`FlowControlNotification` back-pressure signals (`ENOUGH_DATA` / `NEED_DATA`),
+which the page surfaces live.  Pick *As fast as possible* to flood the
+pipeline and watch it push back.  Codecs the browser can't play through MSE
+fall back to a plain chunked-HTTP `<audio src>` with polled metrics.
 
 ```sh
 # Terminal 1: the transform service with the TTS pipeline set

@@ -30,7 +30,8 @@ tracing-subscriber = { workspace = true }
 # demo).  Examples may use dev-dependencies; they do not affect the client
 # binary.
 [dev-dependencies]
-axum = { workspace = true }
+axum = { workspace = true, features = ["ws"] }
+futures = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

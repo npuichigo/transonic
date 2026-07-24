@@ -58,6 +58,7 @@
   .stat .v { font-size: 1.1rem; font-weight: 600; margin-top: .15rem; font-variant-numeric: tabular-nums; }
   .stat .v.good { color: var(--accent2); }
   .stat .v.blue { color: var(--accent); }
+  .stat .v.warn { color: var(--warn); }
   .note { margin-top: 1rem; color: var(--muted); font-size: .85rem; }
   .note code { color: var(--text); background: var(--panel2); padding: .05rem .35rem; border-radius: 5px; }
   .bar { height: 6px; background: var(--panel2); border-radius: 4px; overflow: hidden; margin-top: .4rem; }
@@ -70,7 +71,7 @@
     <h1>Transonic · TTS Streaming Demo</h1>
     <p>A simulated TTS engine emits raw PCM; Transonic transcodes it to MP3 or WebM/Opus on the fly, and the browser plays the stream through MSE with a ~300 ms jitter buffer.</p>
     <div class="flow">
-      TTS engine (PCM, 20 ms) ─▶ <b>gRPC Transform</b> ─▶ audioconvert ! audioresample ! <b>lamemp3enc / opusenc</b> ─▶ chunked HTTP ─▶ <b>MSE SourceBuffer</b> ─▶ &lt;audio&gt;
+      TTS engine (PCM, 20 ms) ─▶ <b>gRPC Transform</b> ─▶ audioconvert ! audioresample ! <b>lamemp3enc / opusenc</b> ─▶ <b>WebSocket</b> (audio + flow-control) ─▶ <b>MSE SourceBuffer</b> ─▶ &lt;audio&gt;
     </div>
   </header>
 
@@ -118,7 +119,13 @@
         <div class="k">TTS feed progress</div><div class="v" id="m-feed">–</div>
         <div class="bar"><div id="m-feedbar"></div></div>
       </div>
+      <div class="stat"><div class="k">Backpressure (flow control)</div><div class="v" id="m-flow">–</div></div>
     </div>
+    <p class="note">
+      "Backpressure" reflects the gRPC <code>FlowControlNotification</code>s pushed over
+      the WebSocket: pick <b>As fast as possible</b> to flood the pipeline and watch it
+      toggle between <code>ENOUGH_DATA</code> (pause) and <code>NEED_DATA</code> (resume).
+    </p>
   </div>
 
   <div class="panel">
@@ -145,7 +152,7 @@ const $ = (id) => document.getElementById(id);
 
 let catalog = null;
 let session = null;
-let abortController = null;
+let ws = null;
 let progressTimer = null;
 let bufferTimer = null;
 let playClickedAt = null;
@@ -185,9 +192,37 @@ async function load() {
 }
 
 ///////////////////////////////////////////////////////////////////////////
-// server-side metrics polling
+// server-side metrics
 ///////////////////////////////////////////////////////////////////////////
 
+// Renders one server-side progress snapshot.  Shared by the WebSocket push
+// path and the HTTP-polling fallback path.
+function updateServerStats(p) {
+  $("m-ttfb").textContent =
+    p.transform_first_chunk_ms != null ? `${p.transform_first_chunk_ms.toFixed(1)} ms` : "…";
+  $("m-bytes").textContent = `${fmtBytes(p.output_bytes)} · ${p.output_chunks} chunks`;
+  const elapsedS = p.elapsed_ms / 1000;
+  if (elapsedS > 0) {
+    $("m-rate").textContent = `${(p.output_bytes * 8 / elapsedS / 1000).toFixed(0)} kbit/s`;
+    const mediaS = p.output_bytes * 8 / p.bitrate_bps;
+    $("m-media").textContent = `${mediaS.toFixed(1)} s / ${p.source_seconds.toFixed(1)} s`;
+    $("m-x").textContent = `${(mediaS / elapsedS).toFixed(1)}× realtime`;
+  }
+  const feedPct = p.input_bytes_total ? (100 * p.input_bytes_sent / p.input_bytes_total) : 0;
+  $("m-feed").textContent = `${feedPct.toFixed(0)} %`;
+  $("m-feedbar").style.width = `${feedPct}%`;
+}
+
+// Renders a flow-control (back-pressure) notification.
+function updateFlow(p) {
+  const paused = p.kind === "enough_data";
+  $("m-flow").textContent = paused
+    ? `⏸ ENOUGH_DATA · ${p.enough_count}↑ / ${p.need_count}↓`
+    : `▶ NEED_DATA · ${p.enough_count}↑ / ${p.need_count}↓`;
+  $("m-flow").className = paused ? "v warn" : "v good";
+}
+
+// Fallback metrics polling for the non-MSE `<audio src>` path.
 function startProgressPolling(gen) {
   stopProgressPolling();
   progressTimer = setInterval(async () => {
@@ -197,19 +232,7 @@ function startProgressPolling(gen) {
       if (gen !== playGen || !response.ok) return;
       const p = await response.json();
       if (gen !== playGen) return;
-      $("m-ttfb").textContent =
-        p.transform_first_chunk_ms !== null ? `${p.transform_first_chunk_ms.toFixed(1)} ms` : "…";
-      $("m-bytes").textContent = `${fmtBytes(p.output_bytes)} · ${p.output_chunks} chunks`;
-      const elapsedS = p.elapsed_ms / 1000;
-      if (elapsedS > 0) {
-        $("m-rate").textContent = `${(p.output_bytes * 8 / elapsedS / 1000).toFixed(0)} kbit/s`;
-        const mediaS = p.output_bytes * 8 / p.bitrate_bps;
-        $("m-media").textContent = `${mediaS.toFixed(1)} s / ${p.source_seconds.toFixed(1)} s`;
-        $("m-x").textContent = `${(mediaS / elapsedS).toFixed(1)}× realtime`;
-      }
-      const feedPct = p.input_bytes_total ? (100 * p.input_bytes_sent / p.input_bytes_total) : 0;
-      $("m-feed").textContent = `${feedPct.toFixed(0)} %`;
-      $("m-feedbar").style.width = `${feedPct}%`;
+      updateServerStats(p);
       if (p.state === "done" || p.state === "error") stopProgressPolling();
     } catch (_) {}
   }, 250);
@@ -222,11 +245,11 @@ function stopProgressPolling() {
 // MSE player
 ///////////////////////////////////////////////////////////////////////////
 
-async function playMse(url, mime, gen) {
+// WebSocket + MSE player: encoded audio arrives as binary frames, everything
+// else (progress, flow control, media properties, completion) as JSON text.
+async function playWs(wsUrl, mime, gen) {
   const audio = $("audio");
   const mediaSource = new MediaSource();
-  const controller = new AbortController();
-  abortController = controller;
   audio.src = URL.createObjectURL(mediaSource);
   let fetchedBytes = 0;
   let started = false;
@@ -247,7 +270,6 @@ async function playMse(url, mime, gen) {
   };
   sourceBuffer.addEventListener("updateend", () => {
     if (gen !== playGen) return;
-    // Start playback once the jitter buffer is filled.
     if (!started && sourceBuffer.buffered.length > 0 &&
         sourceBuffer.buffered.end(0) >= JITTER_BUFFER_S) {
       started = true;
@@ -255,10 +277,6 @@ async function playMse(url, mime, gen) {
     }
     pump();
   });
-
-  const response = await fetch(url, { signal: controller.signal });
-  if (gen !== playGen) return;
-  const reader = response.body.getReader();
 
   if (bufferTimer) clearInterval(bufferTimer);
   bufferTimer = setInterval(() => {
@@ -274,17 +292,31 @@ async function playMse(url, mime, gen) {
     }
   }, 200);
 
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done || gen !== playGen) break;
-      fetchedBytes += value.byteLength;
-      pending.push(value);
-      pump();
+  ws = new WebSocket(wsUrl);
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (event) => {
+    if (gen !== playGen) return;
+    if (typeof event.data === "string") {
+      const msg = JSON.parse(event.data);
+      if (msg.type === "progress") updateServerStats(msg);
+      else if (msg.type === "flow_control") updateFlow(msg);
+      else if (msg.type === "completed") { streamEnded = true; pump(); }
+      else if (msg.type === "error") { $("b-state").textContent = "error"; }
+      return;
     }
-  } catch (_) { /* aborted */ }
-  streamEnded = true;
-  pump();
+    fetchedBytes += event.data.byteLength;
+    pending.push(new Uint8Array(event.data));
+    pump();
+  };
+  ws.onclose = () => {
+    if (gen !== playGen) return;
+    streamEnded = true;
+    pump();
+  };
+  ws.onerror = () => {
+    if (gen !== playGen) return;
+    $("b-state").textContent = "error";
+  };
 }
 
 function playDirect(url) {
@@ -305,21 +337,26 @@ function play() {
     pace: $("pace").value,
     session,
   });
-  const url = `/stream?${params}`;
-  $("url").textContent = url;
-  ["m-ttfb","m-bytes","m-rate","m-media","m-x","m-feed","b-ttfa","b-bytes","b-buffer"]
+  ["m-ttfb","m-bytes","m-rate","m-media","m-x","m-feed","m-flow","b-ttfa","b-bytes","b-buffer"]
     .forEach((id) => { $(id).textContent = "…"; });
+  $("m-flow").className = "v";
   $("m-feedbar").style.width = "0%";
   $("b-state").textContent = "connecting";
   playClickedAt = performance.now();
   ttfaShown = false;
   $("stop").disabled = false;
 
-  startProgressPolling(gen);
   const useMse = window.MediaSource && MediaSource.isTypeSupported(output.mime);
   if (useMse) {
-    playMse(url, output.mime, gen);
+    // Primary path: audio + flow-control events over one WebSocket.
+    const wsUrl = `${location.origin.replace(/^http/, "ws")}/ws?${params}`;
+    $("url").textContent = wsUrl;
+    playWs(wsUrl, output.mime, gen);
   } else {
+    // Fallback for codecs MSE can't play: chunked HTTP + polled metrics.
+    const url = `/stream?${params}`;
+    $("url").textContent = url;
+    startProgressPolling(gen);
     playDirect(url);
   }
 }
@@ -327,7 +364,7 @@ function play() {
 function stop() {
   // Invalidate every in-flight async writer from the current generation.
   playGen++;
-  if (abortController) { abortController.abort(); abortController = null; }
+  if (ws) { try { ws.close(); } catch (_) {} ws = null; }
   stopProgressPolling();
   if (bufferTimer) { clearInterval(bufferTimer); bufferTimer = null; }
   const audio = $("audio");
