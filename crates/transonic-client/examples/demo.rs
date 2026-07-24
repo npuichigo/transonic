@@ -129,15 +129,17 @@ fn output_formats() -> Vec<OutputFormat> {
     ]
 }
 
-// Synthetic PCM samples (generated with GStreamer's `audiotestsrc`) that
-// stand in for a TTS engine's output — no third-party audio is bundled.
+// Speech PCM samples standing in for a TTS engine's output.  These are ~30 s
+// clips of public-domain LibriVox audiobook recordings (see testdata/README.md
+// for provenance), decoded to raw mono PCM at the rates/formats a TTS backend
+// typically emits.
 fn sample_definitions() -> Vec<Sample> {
     let empty = Bytes::new();
     vec![
         Sample {
-            id: "tone-24k",
-            label: "Sine tone A4 · 24 kHz s16le",
-            file: "tone-a4-24kHz-s16le-mono.raw",
+            id: "austen-24k",
+            label: "Austen narration · 24 kHz s16le",
+            file: "librivox-austen-24kHz-s16le-mono.raw",
             input_bin: "pcm_s16_24k",
             sample_rate: 24_000,
             bytes_per_frame: 2,
@@ -145,9 +147,9 @@ fn sample_definitions() -> Vec<Sample> {
             data: empty.clone(),
         },
         Sample {
-            id: "drone-24k-f32",
-            label: "Saw drone · 24 kHz f32le (model output)",
-            file: "drone-saw-24kHz-f32le-mono.raw",
+            id: "austen-24k-f32",
+            label: "Austen narration · 24 kHz f32le (model output)",
+            file: "librivox-austen-24kHz-f32le-mono.raw",
             input_bin: "pcm_f32_24k",
             sample_rate: 24_000,
             bytes_per_frame: 4,
@@ -155,9 +157,9 @@ fn sample_definitions() -> Vec<Sample> {
             data: empty.clone(),
         },
         Sample {
-            id: "tone-16k",
-            label: "Triangle tone E4 · 16 kHz s16le",
-            file: "tone-e4-16kHz-s16le-mono.raw",
+            id: "suntzu-16k",
+            label: "Sun Tzu narration · 16 kHz s16le",
+            file: "librivox-suntzu-16kHz-s16le-mono.raw",
             input_bin: "pcm_s16_16k",
             sample_rate: 16_000,
             bytes_per_frame: 2,
@@ -165,19 +167,9 @@ fn sample_definitions() -> Vec<Sample> {
             data: empty.clone(),
         },
         Sample {
-            id: "ticks-16k",
-            label: "Metronome ticks · 16 kHz s16le",
-            file: "ticks-16kHz-s16le-mono.raw",
-            input_bin: "pcm_s16_16k",
-            sample_rate: 16_000,
-            bytes_per_frame: 2,
-            sample_format: "s16le",
-            data: empty.clone(),
-        },
-        Sample {
-            id: "noise-8k",
-            label: "Pink noise · 8 kHz s16le",
-            file: "noise-pink-8kHz-s16le-mono.raw",
+            id: "suntzu-8k",
+            label: "Sun Tzu narration · 8 kHz s16le",
+            file: "librivox-suntzu-8kHz-s16le-mono.raw",
             input_bin: "pcm_s16_8k",
             sample_rate: 8_000,
             bytes_per_frame: 2,
