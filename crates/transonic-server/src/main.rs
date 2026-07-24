@@ -3,13 +3,6 @@
 //! A gRPC bidirectional-streaming service that runs GStreamer media
 //! transformation pipelines as a service.
 
-// Use jemalloc as the process-wide allocator: a scalable multithreaded
-// allocator that keeps a tighter resident set than glibc on high-core hosts
-// and (via background threads) returns freed pages to the OS.
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
 use transonic_server::{grpc, health, metrics};
 
 use std::net::SocketAddr;
