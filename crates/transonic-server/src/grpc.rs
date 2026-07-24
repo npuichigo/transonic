@@ -251,6 +251,7 @@ impl Outcome {
 
 struct GrpcReader {
     stream: Streaming<proto::TransformRequest>,
+    metrics: Arc<Metrics>,
 }
 
 #[async_trait::async_trait]
@@ -271,10 +272,14 @@ impl ConnectionReader for GrpcReader {
                      `transonic.v1.TransformConfig` message",
             )
             .into()),
-            Some(proto::transform_request::Request::Payload(payload)) => Ok(Some(ClientMessage {
-                stream_id: request.channel_id,
-                data: ClientMessageData::InputBuffers(payload.chunk_list),
-            })),
+            Some(proto::transform_request::Request::Payload(payload)) => {
+                let bytes: u64 = payload.chunk_list.iter().map(|c| c.len() as u64).sum();
+                self.metrics.add_input_bytes(bytes);
+                Ok(Some(ClientMessage {
+                    stream_id: request.channel_id,
+                    data: ClientMessageData::InputBuffers(payload.chunk_list),
+                }))
+            }
             Some(proto::transform_request::Request::ChannelCompleted(_)) => {
                 Ok(Some(ClientMessage {
                     stream_id: request.channel_id,
@@ -290,6 +295,7 @@ struct GrpcWriter {
     sender: mpsc::Sender<Result<proto::TransformResponse, Status>>,
     shutting_down: Arc<AtomicBool>,
     shutdown_message_sent: bool,
+    metrics: Arc<Metrics>,
 }
 
 impl GrpcWriter {
@@ -322,6 +328,7 @@ impl ConnectionWriter for GrpcWriter {
 
         let response = match message.data {
             ServerMessageData::OutputBuffer(output) => {
+                self.metrics.add_output_bytes(output.buffer.len() as u64);
                 let mut metadata = Vec::new();
                 if let Some(duration) = output.chunk_duration_ms {
                     metadata.push(proto::ChunkMetadata {
@@ -357,27 +364,34 @@ impl ConnectionWriter for GrpcWriter {
                     )),
                 }
             }
-            ServerMessageData::DataSaturation => proto::TransformResponse {
-                channel_id: message.stream_id,
-                response: Some(
-                    proto::transform_response::Response::FlowControlNotification(
-                        proto::FlowControlNotification {
-                            notification_type: proto::FlowControlNotificationType::EnoughData
-                                .into(),
-                        },
+            ServerMessageData::DataSaturation => {
+                self.metrics.record_flow_control("enough_data");
+                proto::TransformResponse {
+                    channel_id: message.stream_id,
+                    response: Some(
+                        proto::transform_response::Response::FlowControlNotification(
+                            proto::FlowControlNotification {
+                                notification_type: proto::FlowControlNotificationType::EnoughData
+                                    .into(),
+                            },
+                        ),
                     ),
-                ),
-            },
-            ServerMessageData::DataStarvation => proto::TransformResponse {
-                channel_id: message.stream_id,
-                response: Some(
-                    proto::transform_response::Response::FlowControlNotification(
-                        proto::FlowControlNotification {
-                            notification_type: proto::FlowControlNotificationType::NeedData.into(),
-                        },
+                }
+            }
+            ServerMessageData::DataStarvation => {
+                self.metrics.record_flow_control("need_data");
+                proto::TransformResponse {
+                    channel_id: message.stream_id,
+                    response: Some(
+                        proto::transform_response::Response::FlowControlNotification(
+                            proto::FlowControlNotification {
+                                notification_type: proto::FlowControlNotificationType::NeedData
+                                    .into(),
+                            },
+                        ),
                     ),
-                ),
-            },
+                }
+            }
             ServerMessageData::MediaProperties(properties) => proto::TransformResponse {
                 channel_id: message.stream_id,
                 response: Some(proto::transform_response::Response::MediaProperties(
@@ -587,6 +601,7 @@ impl proto::transform_service_server::TransformService for TransformService {
 
         tokio::spawn(async move {
             metrics.job_started();
+            let started = std::time::Instant::now();
             let outcome = run_operation(
                 processor,
                 shutting_down,
@@ -595,9 +610,11 @@ impl proto::transform_service_server::TransformService for TransformService {
                 tx.clone(),
                 &peer,
                 job_id,
+                Arc::clone(&metrics),
             )
             .await;
             metrics.job_finished();
+            metrics.observe_duration(started.elapsed().as_secs_f64());
 
             match outcome {
                 Some(outcome) => {
@@ -625,6 +642,7 @@ impl proto::transform_service_server::TransformService for TransformService {
 
 /// Runs one transform operation; returns `None` when the operation was
 /// cancelled by the client (no termination response could be delivered).
+#[allow(clippy::too_many_arguments)]
 async fn run_operation(
     processor: Arc<Processor>,
     shutting_down: Arc<AtomicBool>,
@@ -633,12 +651,17 @@ async fn run_operation(
     tx: mpsc::Sender<Result<proto::TransformResponse, Status>>,
     peer: &str,
     job_id: Result<JobId, String>,
+    metrics: Arc<Metrics>,
 ) -> Option<Outcome> {
-    let mut reader = GrpcReader { stream };
+    let mut reader = GrpcReader {
+        stream,
+        metrics: Arc::clone(&metrics),
+    };
     let mut writer = GrpcWriter {
         sender: tx.clone(),
         shutting_down,
         shutdown_message_sent: false,
+        metrics,
     };
 
     let outcome = process_operation(
