@@ -1,0 +1,5 @@
+# Build output (rebuilt inside the image) and VCS / local scratch.
+target
+.git
+*.log
+/tmp

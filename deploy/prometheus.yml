@@ -1,0 +1,24 @@
+# Minimal Prometheus scrape config for a locally-running Transonic service.
+#
+# The service exposes its metrics on the address given by PROMETHEUS_PORT
+# (default 0.0.0.0:8080; the demo setup uses 127.0.0.1:18330).  Run Prometheus
+# sharing the host network so it can reach that address:
+#
+#   docker run --rm --network host \
+#     -v "$PWD/deploy/prometheus.yml:/etc/prometheus/prometheus.yml" \
+#     prom/prometheus
+#
+# then open http://localhost:9090 and query e.g.
+#   transonic_transform_operations_total
+#   transonic_active_jobs
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: transonic
+    static_configs:
+      - targets: ["127.0.0.1:18330"]
+        labels:
+          service: transonic

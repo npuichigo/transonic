@@ -1,0 +1,11 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    # Grafana runs with --network host, so Prometheus is on localhost.
+    url: http://localhost:9090
+    isDefault: true
+    editable: true

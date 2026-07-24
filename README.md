@@ -149,6 +149,29 @@ Prometheus metrics are exposed at `http://0.0.0.0:8080/metrics`, and the
 standard `grpc.health.v1.Health/Check` method reports the service health
 (driven by a moving-average filter over transform outcomes).
 
+### Monitoring stack (Prometheus + Grafana)
+
+`deploy/` ships a ready-to-run Prometheus scrape config and a provisioned
+Grafana dashboard.  With the service exposing metrics on `127.0.0.1:18330`:
+
+```sh
+# Prometheus — scrapes the service (shares the host network to reach it)
+docker run -d --name transonic-prom --network host \
+  -v "$PWD/deploy/prometheus.yml:/etc/prometheus/prometheus.yml" \
+  prom/prometheus
+
+# Grafana — Prometheus datasource + the "Transonic" dashboard, auto-provisioned
+docker run -d --name transonic-grafana --network host \
+  -e GF_AUTH_ANONYMOUS_ENABLED=true -e GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
+  -v "$PWD/deploy/grafana/provisioning:/etc/grafana/provisioning" \
+  -v "$PWD/deploy/grafana/dashboards:/etc/grafana/dashboards" \
+  grafana/grafana
+```
+
+Then open Grafana at `http://localhost:3000` → dashboard **Transonic**
+(active jobs, transcodes completed, throughput ops/s, error ratio, and
+throughput-by-outcome / concurrency time series).
+
 ## TTS streaming demo
 
 A web demo simulating the TTS scenario — a producer emits raw PCM (from
