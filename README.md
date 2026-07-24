@@ -209,12 +209,59 @@ bins); outputs cover MP3 at 16/24/44.1 kHz and WebM/Opus at 16/24/48 kHz,
 with the bitrate supplied per request through the
 `$(pipeline_parameters.bitrate,...)` template placeholder.
 
+## Performance
+
+Numbers from the container image (`docker build -t transonic .`) run with a
+pinned vCPU budget (`--cpus`), driven by the bundled `loadtest` example from
+the host.  Each request streams a 30 s mono 24 kHz `s16le` PCM clip and
+transcodes it to MP3 (24 kHz, 96 kbit/s); the service runs glibc with
+`MALLOC_ARENA_MAX=2` and the `config/tts_bench.json` config (2 MiB input
+buffer).  The host is shared, so treat these as representative, not lab-grade.
+
+| vCPUs | concurrency | throughput     | aggregate      | p50     | p99     |
+| ----: | ----------: | -------------: | -------------: | ------: | ------: |
+| 8     | 1           | 7 clips/s      | 210× realtime  | 157 ms  | 224 ms  |
+| 8     | **8**       | **50 clips/s** | **1490× realtime** | 173 ms  | 196 ms  |
+| 8     | 16          | 43 clips/s     | 1290× realtime | 378 ms  | 502 ms  |
+| 8     | 32          | 25 clips/s     | 760× realtime  | 1293 ms | 1792 ms |
+| 16    | 1           | 7 clips/s      | 223× realtime  | 156 ms  | 165 ms  |
+| 16    | **16**      | **90 clips/s** | **2670× realtime** | 178 ms  | 262 ms  |
+| 16    | 32          | 52 clips/s     | 1550× realtime | 579 ms  | 977 ms  |
+| 16    | 64          | 27 clips/s     | 815× realtime  | 2352 ms | 2581 ms |
+
+Takeaways:
+
+* **Throughput peaks at concurrency ≈ vCPU count** — about 180× realtime and
+  ~5.7 clips/s per core — and scales near-linearly from 8 to 16 vCPUs
+  (50 → 90 clips/s).  A single stream transcodes a 30 s clip in ~155 ms
+  (~190× realtime).
+* **Oversubscribing trades throughput for latency.**  Past the core count p50
+  climbs steeply and aggregate throughput falls, so size the client's
+  concurrency near the available vCPUs rather than firing unbounded requests.
+* **WebM/Opus**, a heavier encoder, runs at roughly half the MP3 throughput:
+  16 vCPU / concurrency 16 → ~43 clips/s, 1290× realtime, p50 387 ms; a single
+  Opus stream is ~104 ms.
+* **Footprint stays small** — peak RSS ~150 MiB under the concurrency-16 soak,
+  thanks to the arena cap (glibc otherwise balloons to several hundred MiB on
+  a many-core host).
+
+Reproduce:
+
+```sh
+docker run -d --name transonic-bench --cpus=16 -p 5000:5000 \
+    -e TRANSONIC_CONFIG_PATH=/etc/transonic/tts_bench.json transonic
+cargo run --release --example loadtest -- \
+    http://127.0.0.1:5000 testdata/librivox-austen-24kHz-s16le-mono.raw \
+    pcm_s16_24k mp3-24khz 30.0 16 320
+```
+
 ## Configuration
 
 Configuration files are JSON documents matching the
 `transonic.v1.ServiceConfiguration` schema (see
-`config/service_config_sample.json`, `config/dev_env.json` and
-`config/tts_demo.json`).  Pipeline bins are `gst-launch`-style fragments with
+`config/service_config_sample.json`, `config/dev_env.json`,
+`config/tts_demo.json` and `config/tts_bench.json`).  Pipeline bins are
+`gst-launch`-style fragments with
 `$(pipeline_parameters.key,default)` placeholders substituted per channel at
 request time.
 
