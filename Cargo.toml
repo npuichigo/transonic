@@ -57,4 +57,5 @@ prometheus = "0.13"
 axum = "0.7"
 
 [profile.release]
-lto = "thin"
+lto = "fat"
+codegen-units = 1

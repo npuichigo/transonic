@@ -189,8 +189,19 @@ async fn run(options: Options) -> Result<(), String> {
 
     info!(endpoint = %endpoint, "entering I/O loop");
     tonic::transport::Server::builder()
+        // HTTP/2 keepalive tuning: keep long-idle streaming connections alive
+        // (e.g. TTS silence gaps) so intermediaries don't drop them, matching
+        // the intent of the reference service's keepalive channel arguments.
+        // NOTE: tonic/hyper's HTTP/2 keepalive model covers the keepalive
+        // interval/timeout, adaptive flow-control window and TCP keepalive;
+        // the C-core-specific ping-abuse knobs (permit-without-calls,
+        // max-pings-without-data, ping strikes) have no direct hyper
+        // equivalent and are not exposed.
         .http2_keepalive_interval(Some(Duration::from_secs(2 * 60)))
         .http2_keepalive_timeout(Some(Duration::from_secs(60)))
+        .http2_adaptive_window(Some(true))
+        .tcp_keepalive(Some(Duration::from_secs(2 * 60)))
+        .tcp_nodelay(true)
         .add_service(TransformServiceServer::new(transform_service))
         .add_service(HealthServer::new(health_service))
         .serve_with_shutdown(endpoint, async {

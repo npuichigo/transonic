@@ -2,23 +2,33 @@
   "serviceParameters": [
     {
       "description": "Process as fast as possible; pacing is driven by the TTS producer",
-      "default": { "rate": 0.0 }
+      "default": {
+        "rate": 0.0
+      }
     },
     {
       "description": "Default input buffer of 2MB",
-      "default": { "pipelineInputBuffer": 2097152 }
+      "default": {
+        "pipelineInputBuffer": 2097152
+      }
     },
     {
       "description": "Small output buffer for low-latency streaming",
-      "default": { "pipelineOutputBuffer": 4096 }
+      "default": {
+        "pipelineOutputBuffer": 4096
+      }
     },
     {
       "description": "Flush output at least every 100 milliseconds",
-      "default": { "pipelineOutputBufferMilliseconds": 100 }
+      "default": {
+        "pipelineOutputBufferMilliseconds": 100
+      }
     },
     {
       "description": "Default read timeout of 30 seconds",
-      "default": { "readTimeoutMilliseconds": 30000 }
+      "default": {
+        "readTimeoutMilliseconds": 30000
+      }
     }
   ],
   "pipelines": {
@@ -57,22 +67,22 @@
           "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=44100 ! lamemp3enc target=bitrate cbr=true bitrate=$(pipeline_parameters.bitrate,128)"
         },
         "opus-ogg-16khz": {
-          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! opusenc frame-size=20 bitrate=$(pipeline_parameters.bitrate,64000) ! oggmux"
+          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! opusenc frame-size=20 complexity=$(pipeline_parameters.complexity,5) bitrate=$(pipeline_parameters.bitrate,64000) ! oggmux"
         },
         "opus-ogg-24khz": {
-          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! opusenc frame-size=20 bitrate=$(pipeline_parameters.bitrate,64000) ! oggmux"
+          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! opusenc frame-size=20 complexity=$(pipeline_parameters.complexity,5) bitrate=$(pipeline_parameters.bitrate,64000) ! oggmux"
         },
         "opus-ogg-48khz": {
-          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=48000 ! opusenc frame-size=20 bitrate=$(pipeline_parameters.bitrate,64000) ! oggmux"
+          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=48000 ! opusenc frame-size=20 complexity=$(pipeline_parameters.complexity,5) bitrate=$(pipeline_parameters.bitrate,64000) ! oggmux"
         },
         "opus-webm-16khz": {
-          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! opusenc frame-size=20 bitrate=$(pipeline_parameters.bitrate,64000) ! webmmux streamable=true"
+          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! opusenc frame-size=20 complexity=$(pipeline_parameters.complexity,5) bitrate=$(pipeline_parameters.bitrate,64000) ! webmmux streamable=true"
         },
         "opus-webm-24khz": {
-          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! opusenc frame-size=20 bitrate=$(pipeline_parameters.bitrate,64000) ! webmmux streamable=true"
+          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! opusenc frame-size=20 complexity=$(pipeline_parameters.complexity,5) bitrate=$(pipeline_parameters.bitrate,64000) ! webmmux streamable=true"
         },
         "opus-webm-48khz": {
-          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=48000 ! opusenc frame-size=20 bitrate=$(pipeline_parameters.bitrate,64000) ! webmmux streamable=true"
+          "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=48000 ! opusenc frame-size=20 complexity=$(pipeline_parameters.complexity,5) bitrate=$(pipeline_parameters.bitrate,64000) ! webmmux streamable=true"
         },
         "riff-16khz-16bit-mono-pcm": {
           "specs": "concat name=c ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! wavenc",

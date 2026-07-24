@@ -309,56 +309,60 @@ impl AppSource {
     }
 
     fn push_bytes(&self, state: &mut SourceState, count: u64) -> Result<(), ProcessError> {
-        // Assemble exactly `count` bytes from the queued chunks.
-        let mut data = Vec::with_capacity(count as usize);
+        // Push exactly `count` bytes drawn from the queued chunks.  Each
+        // chunk is wrapped into a GstBuffer without copying: `Buffer::from_slice`
+        // hands ownership of the `Bytes` to GStreamer (kept alive by the
+        // buffer's memory), and `Bytes::split_to` slices the boundary chunk by
+        // sharing the underlying allocation.  This keeps the whole path from
+        // the gRPC payload to the pipeline copy-free.
         let mut remaining = count as usize;
+        let mut offset = state.offset;
         while remaining > 0 {
             let Some(mut chunk) = state.queue.pop_front() else {
                 return Err(ProcessError::internal(
                     "queued byte accounting is out of sync with the queue contents",
                 ));
             };
-            if chunk.len() <= remaining {
-                remaining -= chunk.len();
-                data.extend_from_slice(&chunk);
+            let take = chunk.len().min(remaining);
+            let piece = if take == chunk.len() {
+                chunk
             } else {
-                let taken = chunk.split_to(remaining);
-                data.extend_from_slice(&taken);
-                remaining = 0;
+                let piece = chunk.split_to(take);
                 state.queue.push_front(chunk);
+                piece
+            };
+            remaining -= take;
+
+            let next_offset = offset + take as u64;
+            let mut buffer = gst::Buffer::from_slice(piece);
+            {
+                let buffer_ref = buffer.get_mut().ok_or_else(|| {
+                    ProcessError::internal("freshly created buffer is unexpectedly shared")
+                })?;
+                buffer_ref.set_offset(offset);
+                buffer_ref.set_offset_end(next_offset);
+                if !transonic_meta::add_custom_audio_meta(
+                    buffer_ref,
+                    CustomAudioMeta {
+                        silence: false,
+                        input_stream_offset: offset as i64,
+                    },
+                ) {
+                    return Err(ProcessError::internal(
+                        "failed to add custom audio metadata to input buffer",
+                    ));
+                }
             }
+
+            self.appsrc.push_buffer(buffer).map_err(|e| {
+                ProcessError::internal(format!(
+                    "appsrc push_buffer(): failed to push buffer: {e:?}"
+                ))
+            })?;
+            offset = next_offset;
         }
         state.queued_bytes -= count;
-
-        let offset = state.offset;
-        let next_offset = offset + count;
-
-        let mut buffer = gst::Buffer::from_mut_slice(data);
-        {
-            let buffer_ref = buffer.get_mut().ok_or_else(|| {
-                ProcessError::internal("freshly created buffer is unexpectedly shared")
-            })?;
-            buffer_ref.set_offset(offset);
-            buffer_ref.set_offset_end(next_offset);
-            if !transonic_meta::add_custom_audio_meta(
-                buffer_ref,
-                CustomAudioMeta {
-                    silence: false,
-                    input_stream_offset: offset as i64,
-                },
-            ) {
-                return Err(ProcessError::internal(
-                    "failed to add custom audio metadata to input buffer",
-                ));
-            }
-        }
-
-        self.appsrc.push_buffer(buffer).map_err(|e| {
-            ProcessError::internal(format!(
-                "appsrc push_buffer(): failed to push buffer: {e:?}"
-            ))
-        })?;
-        state.offset = next_offset;
+        state.offset = offset;
         Ok(())
     }
 }
