@@ -218,6 +218,10 @@ transcodes it to MP3 (24 kHz, 96 kbit/s); the service runs glibc with
 `MALLOC_ARENA_MAX=2` and the `config/tts_bench.json` config (2 MiB input
 buffer).  The host is shared, so treat these as representative, not lab-grade.
 
+"clips/s" is the request rate — each request is one complete 30 s-clip
+transcode — so 90 clips/s means 90 full clips finished per second, i.e.
+90 × 30 s = 2670 audio-seconds encoded per wall-second ("aggregate").
+
 | vCPUs | concurrency | throughput     | aggregate      | p50     | p99     |
 | ----: | ----------: | -------------: | -------------: | ------: | ------: |
 | 8     | 1           | 7 clips/s      | 210× realtime  | 157 ms  | 224 ms  |
