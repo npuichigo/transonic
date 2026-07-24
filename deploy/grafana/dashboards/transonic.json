@@ -7,7 +7,7 @@
   "tags": ["transonic"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 4,
   "refresh": "5s",
   "time": { "from": "now-15m", "to": "now" },
   "templating": { "list": [] },
@@ -98,10 +98,10 @@
       "gridPos": { "h": 9, "w": 8, "x": 16, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
-        "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 30, "lineWidth": 2, "gradientMode": "opacity" }, "color": { "mode": "fixed", "fixedColor": "blue" } },
+        "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "lineInterpolation": "linear", "lineWidth": 2, "fillOpacity": 25, "showPoints": "auto", "pointSize": 5, "spanNulls": false, "axisPlacement": "auto", "axisLabel": "", "scaleDistribution": { "type": "linear" } }, "color": { "mode": "palette-classic" } },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "hidden" }, "tooltip": { "mode": "single" } },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true, "calcs": [] }, "tooltip": { "mode": "single", "sort": "none" } },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
         "expr": "transonic_active_jobs", "legendFormat": "active jobs" } ]
     },
