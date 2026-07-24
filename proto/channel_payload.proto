@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package transonic.v1;
+
+// Message sent to signal that an input channel has completed so that
+// certain pipeline operations such as concat may be unblocked.
+// If no ChannelCompleted message is received, channel will be assumed
+// to be complete once TransformRequest stream is complete.
+message ChannelCompleted {
+}
+
+// Segment of data for input channel
+message InputChannelPayload {
+    // List of byte arrays / chunks (chunking can reduce copying on the client side)
+    repeated bytes chunk_list = 1;
+}
+
+// Segment of data for output channel
+message OutputChannelPayload {
+    // List of byte arrays / chunks (chunking can reduce copying on the client side)
+    repeated bytes chunk_list = 1;
+
+    // List of metadata associated with the chunks in the chunk_list
+    repeated MetadataList metadata_list = 2;
+}
+
+// Chunk metadata
+message ChunkMetadata {
+    oneof value {
+        // The timestamp when the chunk content should be presented to the user
+        uint64 chunk_offset_milliseconds = 1;
+
+        // Duration of the chunk in milliseconds
+        uint64 chunk_duration_milliseconds = 2;
+
+        // Indicates whether chunk contains only silence 
+        bool has_only_silence = 3;
+
+        // The input stream offset (in bytes) corresponding to this output chunk
+        uint64 input_stream_offset = 4;
+    }
+}
+
+message MetadataList {    
+    repeated ChunkMetadata metadata = 1;
+}
+
+// Used to declare a channel (with unique channel_id) for a Transform request (from TransformConfig.inputs / outputs)
+message ChannelSpecifier {
+    // Unique ID used to identify what channel a payload message belongs to
+    string channel_id = 1;
+
+    // Specifies the type of pipeline bin we want to use (as defined in ServiceConfiguration.pipelines)
+    string pipeline_bin_id = 2;
+
+    // Specifies the channel parameter.
+    map<string, string> pipeline_parameters = 3;
+
+    // Specifies metadata corresponding to the channel data.
+    map<string, string> metadata = 4;
+}

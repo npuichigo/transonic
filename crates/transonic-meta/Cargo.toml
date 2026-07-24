@@ -1,0 +1,10 @@
+[package]
+name = "transonic-meta"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Custom per-buffer audio metadata shared between the pipeline engine and the custom elements"
+
+[dependencies]
+gstreamer = { workspace = true }
+glib = { workspace = true }

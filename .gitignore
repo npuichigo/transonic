@@ -1,0 +1,14 @@
+# Rust build output
+/target
+**/*.rs.bk
+
+# Editor / OS
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Local scratch
+/tmp/
+*.log

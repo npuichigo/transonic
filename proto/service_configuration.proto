@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+import "pipeline.proto";
+import "service_parameters.proto";
+
+package transonic.v1;
+
+// Service configuration parameters
+message ServiceConfiguration {
+    // Service parameters
+    repeated ServiceParameterLimits service_parameters = 1;
+
+    // Predefined pipelines, indexed by pipeline_name
+    map<string, PipelineDefinition> pipelines = 2;
+
+    /**
+     * Configuration data for grpc related functionality.
+     */
+
+    optional GrpcConfiguration grpc = 3;
+
+}
+
+/**
+ * Contains configuration information for grpc-related functionality.
+ */
+
+message GrpcConfiguration {
+
+    /**
+     * Configuration data for the grpc server and related services.
+     */
+
+    optional GrpcServerConfiguration server = 1;
+
+}
+
+/**
+ * Contains configuration information for the grpc server and related services.
+ */
+
+message GrpcServerConfiguration {
+
+    /**
+     * Configuration data for the grpc health service.
+     */
+
+    optional GrpcHealthServiceConfiguration health_service = 1;
+
+}
+
+/**
+ * Contains configuration information for the grpc health service.
+ *
+ * The health service monitors the transform service.  The health service
+ * maintains a moving average filter that gives a general indication of how
+ * healthy the transform service is over time.  A 0 result is recorded for each
+ * expected response the transform service emits, and a 1 result is recorded
+ * for each unexpected response the transform service emits.  If the moving
+ * average ever goes above a certain configured threshold, then the service is
+ * considered unhealthy until the moving average goes below the threshold
+ * again.
+ */
+
+message GrpcHealthServiceConfiguration {
+
+    /**
+     * Number of samples maintained by the moving average filter.
+     */
+
+    optional uint32 filter_window_size = 1;
+
+    /**
+     * The threshold for the moving average wherein the transform service is
+     * seen as being unhealthy.  The value must be in the range (0.0, 1.0].
+     */
+
+    optional float unhealthy_threshold = 2;
+
+    /**
+     * The amount of time without seeing a transform response, in milliseconds,
+     * at which the service's health state is considered to be unknown.
+     */
+
+    optional uint32 status_expiration_time = 3;
+
+}

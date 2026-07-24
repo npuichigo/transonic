@@ -1,0 +1,13 @@
+[package]
+name = "transonic-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Generated protobuf/gRPC types for the transonic.v1 service surface"
+
+[dependencies]
+tonic = { workspace = true }
+prost = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }

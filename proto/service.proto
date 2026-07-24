@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+import "transform_config.proto";
+import "transform_completed.proto";
+import "channel_payload.proto";
+import "flow_control_notification.proto";
+import "media_properties.proto";
+import "server_lifecycle_notification.proto";
+
+package transonic.v1;
+
+// Request to transform media
+// First message must be config followed by one or more payload messages
+message TransformRequest {
+    // Input channel ID (as defined in ChannelSpecifier) for this request message
+    string channel_id = 1;
+
+    oneof request {
+        TransformConfig config = 2;
+        InputChannelPayload payload = 8;
+        ChannelCompleted channel_completed = 16;
+    }
+}
+
+// Media transform response message
+// Contains zero or more payloads, followed by one last TransformCompleted message
+message TransformResponse {
+    // Output channel ID (as defined in ChannelSpecifier) for this response message
+    // (empty string for TransformCompleted)
+    string channel_id = 1;
+
+    oneof response {
+        OutputChannelPayload payload = 8;
+        TransformCompleted transform_completed = 32;
+        FlowControlNotification flow_control_notification = 64;
+        MediaProperties media_properties = 128;
+        ServerLifecycleNotification server_lifecycle_notification = 256;
+    }
+}
+
+service TransformService {
+    // Request to perform media transform
+    rpc Transform(stream TransformRequest) returns (stream TransformResponse) {}
+}

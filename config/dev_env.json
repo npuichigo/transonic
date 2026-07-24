@@ -1,0 +1,304 @@
+{
+  "serviceParameters": [
+    {
+      "description": "Default input buffer of 2MB with min of 0 bytes and max of 10 MB",
+      "default": {
+        "pipelineInputBuffer": 2097152
+      },
+      "min": {
+        "pipelineInputBuffer": 1
+      },
+      "max": {
+        "pipelineInputBuffer": 10485760
+      }
+    },
+    {
+      "description": "Default output buffer of 4096 bytes with max of 10 MB",
+      "default": {
+        "pipelineOutputBuffer": 4096
+      },
+      "max": {
+        "pipelineOutputBuffer": 5242880
+      }
+    },
+    {
+      "description": "Default output buffer in milliseconds of 0 milliseconds with max of 2 hours and minimum of 10 milliseconds",
+      "default": {
+        "pipelineOutputBufferMilliseconds": 500
+      },
+      "min": {
+        "pipelineOutputBufferMilliseconds": 10
+      },
+      "max": {
+        "pipelineOutputBufferMilliseconds": 7200000
+      }
+    },
+    {
+      "description": "Default length limit of 10 minutes with min of 1 minute and max of 2 hours",
+      "default": {
+        "lengthLimitMilliseconds": 600000
+      },
+      "min": {
+        "lengthLimitMilliseconds": 60000
+      },
+      "max": {
+        "lengthLimitMilliseconds": 7200000
+      }
+    },
+    {
+      "description": "Default read timeout of 0 seconds (disable timeout) with min of 0 second and max of 2 minutes. Some read timeout is required to ensure that disconnected sessions won't block forever.",
+      "default": {
+        "readTimeoutMilliseconds": 0
+      }
+    },
+    {
+      "description": "",
+      "default": {
+        "streamOutput": false
+      }
+    }
+  ],
+  "pipelines": {
+    "multi_any_audio/single_format_audio": {
+      "input": {
+        "tts_backgroundaudio_template_8k": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! queue ! mixer.sink-backgroundaudio"
+        },
+        "tts_backgroundaudio_template_16k": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! queue ! mixer.sink-backgroundaudio"
+        },
+        "tts_backgroundaudio_template_24k": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! queue ! mixer.sink-backgroundaudio"
+        },
+        "multi_any": {
+          "specs": "decodebin ! audioconvert ! audioresample ! queue ! c."
+        },
+        "oggopus_to_pcm_16": {
+          "specs": "oggdemux ! opusdec ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! queue ! c."
+        },
+        "oggopus_to_pcm_8": {
+          "specs": "oggdemux ! opusdec ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! queue ! c."
+        },
+        "any_to_pcm_24": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! queue ! c."
+        },
+        "any_to_pcm_16": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! queue ! c."
+        },
+        "any_to_pcm_8": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! queue ! c."
+        },
+        "multi_wav/pcm": {
+          "specs": "audio/x-wav ! decodebin ! audioconvert ! audioresample ! queue ! c."
+        },
+        "multi_wav/pcm_24": {
+          "specs": "audio/x-wav,format=S16LE,channels=1,rate=24000 ! decodebin ! audioconvert ! audioresample ! queue ! c."
+        },
+        "multi_wav/pcm_16": {
+          "specs": "audio/x-wav,format=S16LE,channels=1,rate=16000 ! decodebin ! audioconvert ! audioresample ! queue ! c."
+        },
+        "multi_pcm_24": {
+          "specs": "audioparse raw-format=s16le rate=24000 channels=1 ! audioconvert ! audioresample ! queue ! c."
+        },
+        "multi_pcm_16": {
+          "specs": "audioparse raw-format=s16le rate=16000 channels=1 ! audioconvert ! audioresample ! queue ! c."
+        },
+        "multi_pcm_8": {
+          "specs": "audioparse raw-format=s16le rate=8000 channels=1 ! audioconvert ! audioresample ! queue ! c."
+        },
+        "multi_pcm16_to_pcm8": {
+          "specs": "audioparse raw-format=s16le rate=16000 channels=1 ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! queue ! c."
+        },
+        "multi_mp3/passthrough": {
+          "specs": "queue ! c."
+        },
+        "wav_to_pcm_24": {
+          "specs": "audio/x-wav ! decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! queue ! c."
+        },
+        "wav_to_pcm_16": {
+          "specs": "audio/x-wav ! decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! queue ! c."
+        },
+        "wav_to_pcm_8": {
+          "specs": "audio/x-wav ! decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! queue ! c."
+        },
+        "mp3_to_pcm_24": {
+          "specs": "mpegaudioparse  ! mpg123audiodec ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! queue ! c."
+        },
+        "mp3_to_pcm_16": {
+          "specs": "mpegaudioparse  ! mpg123audiodec ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! queue ! c."
+        },
+        "mp3_to_pcm_8": {
+          "specs": "mpegaudioparse  ! mpg123audiodec ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! queue ! c."
+        },
+        "opus_to_pcm_24": {
+          "specs": "oggdemux ! opusdec ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! queue ! c."
+        },
+        "opus_to_pcm_16": {
+          "specs": "oggdemux ! opusdec ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! queue ! c."
+        },
+        "opus_to_pcm_8": {
+          "specs": "oggdemux ! opusdec ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! queue ! c."
+        },
+        "passthrough": {
+          "specs": "queue ! c."
+        },
+        "multi_wav/passthrough": {
+          "specs": "audio/x-wav ! wavparse ! queue ! c."
+        }
+      },
+      "output": {
+        "tts_backgroundaudio_template_raw-8khz-16bit-mono-pcm": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=8000"
+        },
+        "tts_backgroundaudio_template_raw-16khz-16bit-mono-pcm": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=16000"
+        },
+        "tts_backgroundaudio_template_raw-24khz-16bit-mono-pcm": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=24000"
+        },
+        "tts_backgroundaudio_template_raw-8khz-8bit-mono-mulaw": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! mulawenc ! audio/x-mulaw,channels=1,rate=8000"
+        },
+        "tts_backgroundaudio_template_riff-8khz-8bit-mono-mulaw": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! mulawenc ! audio/x-mulaw,channels=1,rate=8000 ! wavenc",
+          "non_streamable": true
+        },
+        "tts_backgroundaudio_template_raw-8khz-8bit-mono-alaw": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! alawenc ! audio/x-alaw,channels=1,rate=8000"
+        },
+        "tts_backgroundaudio_template_riff-8khz-8bit-mono-alaw": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! alawenc ! audio/x-alaw,channels=1,rate=8000 ! wavenc",
+          "non_streamable": true
+        },
+        "tts_backgroundaudio_template_riff-8khz-16bit-mono-pcm": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! wavenc",
+          "non_streamable": true
+        },
+        "tts_backgroundaudio_template_riff-16khz-16bit-mono-pcm": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! wavenc",
+          "non_streamable": true
+        },
+        "tts_backgroundaudio_template_riff-24khz-16bit-mono-pcm": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! wavenc",
+          "non_streamable": true
+        },
+        "tts_backgroundaudio_template_audio-16khz-32kbitrate-mono-mp3": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! lamemp3enc target=bitrate cbr=true bitrate=32"
+        },
+        "tts_backgroundaudio_template_audio-16khz-64kbitrate-mono-mp3": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! lamemp3enc target=bitrate cbr=true bitrate=64"
+        },
+        "tts_backgroundaudio_template_audio-16khz-128kbitrate-mono-mp3": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! lamemp3enc target=bitrate cbr=true bitrate=128"
+        },
+        "tts_backgroundaudio_template_audio-24khz-48kbitrate-mono-mp3": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! lamemp3enc target=bitrate cbr=true bitrate=48"
+        },
+        "tts_backgroundaudio_template_audio-24khz-96kbitrate-mono-mp3": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! lamemp3enc target=bitrate cbr=true bitrate=96"
+        },
+        "tts_backgroundaudio_template_audio-24khz-160kbitrate-mono-mp3": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! lamemp3enc target=bitrate cbr=true bitrate=160"
+        },
+        "tts_backgroundaudio_template_ogg-16khz-16bit-mono-opus": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! opusenc frame-size=20 bitrate=64000 bitrate-type=CBR ! oggmux"
+        },
+        "tts_backgroundaudio_template_ogg-24khz-16bit-mono-opus": {
+          "specs": "backgroundaudiomixer name=mixer volume=$(pipeline_parameters.volume,1) fadein-duration=$(pipeline_parameters.fadein,0) fadeout-duration=$(pipeline_parameters.fadeout,0) concat name=c ! queue ! mixer.sink-audio mixer.src-mixed ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! opusenc frame-size=20 bitrate=64000 bitrate-type=CBR ! oggmux"
+        },
+        "passthrough": {
+          "specs": "concat name=c"
+        },
+        "riff-passthrough": {
+          "specs": "concat name=c ! wavenc",
+          "non_streamable": true
+        },
+        "audio-16khz-128kbitrate-mono-mp3": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! lamemp3enc target=bitrate cbr=true bitrate=128"
+        },
+        "audio-16khz-64kbitrate-mono-mp3": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! lamemp3enc target=bitrate cbr=true bitrate=64"
+        },
+        "audio-16khz-32kbitrate-mono-mp3": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! lamemp3enc target=bitrate cbr=true bitrate=32"
+        },
+        "audio-24khz-160kbitrate-mono-mp3": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! lamemp3enc target=bitrate cbr=true bitrate=160"
+        },
+        "audio-24khz-96kbitrate-mono-mp3": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! lamemp3enc target=bitrate cbr=true bitrate=96"
+        },
+        "audio-24khz-48kbitrate-mono-mp3": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! lamemp3enc target=bitrate cbr=true bitrate=48"
+        },
+        "riff-8khz-8bit-mono-mulaw": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! mulawenc ! audio/x-mulaw,channels=1,rate=8000 ! wavenc",
+          "non_streamable": true
+        },
+        "raw-8khz-8bit-mono-mulaw": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! mulawenc ! audio/x-mulaw,channels=1,rate=8000"
+        },
+        "riff-8khz-8bit-mono-alaw": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! alawenc ! audio/x-alaw,channels=1,rate=8000 ! wavenc",
+          "non_streamable": true
+        },
+        "raw-8khz-8bit-mono-alaw": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! alawenc ! audio/x-alaw,channels=1,rate=8000"
+        },
+        "riff-8khz-16bit-mono-pcm": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=8000 ! wavenc",
+          "non_streamable": true
+        },
+        "riff-16khz-16bit-mono-pcm": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! wavenc",
+          "non_streamable": true
+        },
+        "riff-24khz-16bit-mono-pcm": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! wavenc",
+          "non_streamable": true
+        },
+        "ogg-16khz-16bit-mono-opus": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=16000 ! opusenc frame-size=20 bitrate=64000 bitrate-type=CBR ! oggmux"
+        },
+        "ogg-24khz-16bit-mono-opus": {
+          "specs": "concat name=c ! audio/x-raw,format=S16LE,channels=1,rate=24000 ! opusenc frame-size=20 bitrate=64000 bitrate-type=CBR ! oggmux"
+        }
+      }
+    },
+    "single_format_audio/multichannelaudio": {
+      "input": {
+        "any_to_pcm": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate={8000,16000} ! demuxtomultichannel name=interleavedbin channels=4"
+        },
+        "any_to_pcm_8": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate={8000,16000} ! demuxtomultichannel name=interleavedbin channels=4"
+        },
+        "any_to_pcm_16": {
+          "specs": "decodebin ! audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate={8000,16000} ! demuxtomultichannel name=interleavedbin channels=4"
+        }
+      },
+      "output": {
+        "riff-passthrough-channel0": {
+          "specs": "interleavedbin.src_0 ! queue ! wavenc",
+          "non_streamable": true
+        },
+        "riff-passthrough-channel1": {
+          "specs": "interleavedbin.src_1 ! queue ! wavenc",
+          "non_streamable": true
+        },
+        "passthrough-channel0": {
+          "specs": "interleavedbin.src_0 ! queue"
+        },
+        "passthrough-channel1": {
+          "specs": "interleavedbin.src_1 ! queue"
+        },
+        "passthrough-channel2": {
+          "specs": "interleavedbin.src_2 ! queue"
+        },
+        "passthrough-channel3": {
+          "specs": "interleavedbin.src_3 ! queue"
+        }
+      }
+    }
+  }
+}

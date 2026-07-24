@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package transonic.v1;
+
+/**
+ * Represents the result of a piped transform operation.
+ */
+
+enum TerminationReason {
+
+    /**
+     * Usused.  Was once used to indicate the result was unknown, but
+     * `INTERNAL_ERROR` is a much better match for that.
+     */
+
+    NONE = 0;
+
+    /**
+     * Indicates that an unexpected error occurred.
+     */
+
+    INTERNAL_ERROR = 1;
+
+    /**
+     * Indicates that no error occurred.
+     */
+
+    END_OF_STREAM = 2;
+
+    /**
+     * Indicates that the stream type could not be inferred.  Mapped internally
+     * to `GST_STREAM_ERROR_TYPE_NOT_FOUND`.
+     */
+
+    INPUT_FORMAT_NOT_DETECTED = 3;
+
+    /**
+     * Indicates that the configured maximum media duration was exceeded.
+     */
+
+    ALLOWED_DURATION_EXCEEDED = 4;
+
+    /**
+     * Indicates that the input buffer overflowed.
+     */
+
+    INPUT_RATE_EXCEEDED = 5;
+
+    /**
+     * Indicates that the service waited for a client message for longer than the
+     * configured read timeout.
+     */
+
+    READ_TIMEOUT = 6;
+
+    /**
+     * Unused.  Would have been used to indicate a timeout while waiting for a
+     * `TransformConfig` message, but `READ_TIMEOUT` is quite sufficient for
+     * that case.
+     */
+
+    STREAM_START_TIMEOUT = 7;
+
+    /**
+     * Indicates that an invalid parameter was sent by the client.
+     */
+
+    INVALID_ARGUMENT = 8;
+
+    /**
+     * Indicates that demuxing failed.  Mapped internally to
+     * `GST_STREAM_ERROR_DEMUX`.
+     */
+
+    DEMUXER_FAILURE = 9;
+
+    /**
+     * Indicates that decoding failed.  Mapped internally to
+     * `GST_STREAM_ERROR_DECODE`.
+     */
+
+    DECODER_FAILURE = 10;
+
+    /**
+     * Indicates that encoding failed.  Mapped internally to
+     * `GST_STREAM_ERROR_ENCODE`.
+     */
+
+    ENCODER_FAILURE = 11;
+
+    /**
+     * Indicates that muxing failed.  Mapped internally to
+     * `GST_STREAM_ERROR_MUX`.
+     */
+
+    MUXER_FAILURE = 12;
+
+    /**
+     * Indicates that the stream is encrypted and can't be decrypted because
+     * decryption is not supported by an element in the pipeline.  Mapped
+     * internally to `GST_STREAM_ERROR_DECRYPT`.
+     */
+
+    DECRYPTION_UNSUPPORTED = 13;
+
+    /**
+     * Indicates that the stream is encrypted and can't be decrypted because no
+     * suitable key is available.  Mapped internally to
+     * `GST_STREAM_ERROR_DECRYPT_NOKEY`.
+     */
+
+    DECRYPTION_KEY_UNAVAILABLE = 14;
+
+    /**
+     * Indicates a general failure associated with the input stream data.
+     * Mapped internally to `GST_STREAM_ERROR_FAILED`.
+     */
+
+    INPUT_STREAM_FAILURE = 15;
+
+    /**
+     * Indicates one of the container types or codec types in the input
+     * stream is not supported by the pipeline.  Mapped internally to
+     * `GST_STREAM_ERROR_FORMAT`, `GST_STREAM_ERROR_CODEC_NOT_FOUND`, and
+     * `GST_STREAM_ERROR_WRONG_TYPE`.
+     */
+
+    INPUT_STREAM_TYPE_UNSUPPORTED = 16;
+
+    /**
+     * Indicates that an error occurred while parsing and building the
+     * pipeline.
+     */
+
+    PIPELINE_PARSE_FAILURE = 17;
+
+    /**
+     * Unused.  Cancellation is indicated with a `grpc` result, and a
+     * `TerminationResponse` message can't be sent after the client indicates
+     * cancellation.
+     */
+
+    CANCELLED = 32;
+
+}

@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package transonic.v1;
+
+// Determine how the service enforces flow control violation
+enum FlowControlEnforcementPolicy {
+    // Block call until flow control is restored
+    BLOCK = 0;
+    // Terminate call with error
+    ERROR = 1;
+    // Send notifications to client indicating that the rate of data being sent is too high and when it is okay to send data again
+    NOTIFY = 2;
+}

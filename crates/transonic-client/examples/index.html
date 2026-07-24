@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transonic · TTS Streaming Demo</title>
+<style>
+  :root {
+    --bg: #0f1217; --panel: #171c24; --panel2: #1d242e;
+    --text: #e6ebf1; --muted: #8b96a5; --line: #2a3340;
+    --accent: #4da3ff; --accent2: #7ee0a3; --warn: #f2b64c;
+    font-size: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  header h1 { margin: 0 0 .25rem; font-size: 1.6rem; letter-spacing: .01em; }
+  header p { margin: 0; color: var(--muted); }
+  header .flow {
+    margin-top: 1rem; padding: .6rem .9rem; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: .82rem; color: var(--muted); overflow-x: auto; white-space: nowrap;
+  }
+  header .flow b { color: var(--accent); font-weight: 600; }
+  .panel {
+    margin-top: 1.5rem; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 1.25rem;
+  }
+  .panel h2 { margin: 0 0 1rem; font-size: .85rem; color: var(--muted);
+              text-transform: uppercase; letter-spacing: .08em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
+  label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: .3rem;
+          text-transform: uppercase; letter-spacing: .06em; }
+  select {
+    width: 100%; padding: .5rem .6rem; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--text); font-size: .92rem;
+  }
+  .actions { margin-top: 1.25rem; display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+  button {
+    padding: .6rem 1.4rem; border: none; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: #08121f; font-weight: 600; font-size: .95rem;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .5; cursor: default; }
+  .url {
+    font-family: ui-monospace, Consolas, monospace; font-size: .78rem;
+    color: var(--muted); word-break: break-all;
+  }
+  audio { width: 100%; margin-top: 1rem; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .75rem; }
+  .stat { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: .7rem .9rem; }
+  .stat .k { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .stat .v { font-size: 1.1rem; font-weight: 600; margin-top: .15rem; font-variant-numeric: tabular-nums; }
+  .stat .v.good { color: var(--accent2); }
+  .stat .v.blue { color: var(--accent); }
+  .note { margin-top: 1rem; color: var(--muted); font-size: .85rem; }
+  .note code { color: var(--text); background: var(--panel2); padding: .05rem .35rem; border-radius: 5px; }
+  .bar { height: 6px; background: var(--panel2); border-radius: 4px; overflow: hidden; margin-top: .4rem; }
+  .bar > div { height: 100%; width: 0%; background: var(--accent); transition: width .2s linear; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Transonic · TTS Streaming Demo</h1>
+    <p>A simulated TTS engine emits raw PCM; Transonic transcodes it to MP3 or WebM/Opus on the fly, and the browser plays the stream through MSE with a ~300 ms jitter buffer.</p>
+    <div class="flow">
+      TTS engine (PCM, 20 ms) ─▶ <b>gRPC Transform</b> ─▶ audioconvert ! audioresample ! <b>lamemp3enc / opusenc</b> ─▶ chunked HTTP ─▶ <b>MSE SourceBuffer</b> ─▶ &lt;audio&gt;
+    </div>
+  </header>
+
+  <div class="panel">
+    <div class="grid">
+      <div>
+        <label for="sample">TTS output (PCM sample)</label>
+        <select id="sample"></select>
+      </div>
+      <div>
+        <label for="output">Encode to</label>
+        <select id="output"></select>
+      </div>
+      <div>
+        <label for="bitrate">Bitrate</label>
+        <select id="bitrate"></select>
+      </div>
+      <div>
+        <label for="pace">TTS generation pace</label>
+        <select id="pace">
+          <option value="off">As fast as possible</option>
+          <option value="1" selected>1× realtime (live TTS)</option>
+          <option value="2">2× realtime</option>
+          <option value="5">5× realtime</option>
+        </select>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="play">▶ Synthesize &amp; play</button>
+      <button id="stop" disabled>■ Stop</button>
+      <span class="url" id="url"></span>
+    </div>
+    <audio id="audio" controls></audio>
+  </div>
+
+  <div class="panel">
+    <h2>Server side · demo ⇄ transform service (excludes browser &amp; page network)</h2>
+    <div class="stats">
+      <div class="stat"><div class="k">Transform first chunk</div><div class="v good" id="m-ttfb">–</div></div>
+      <div class="stat"><div class="k">Encoded received</div><div class="v" id="m-bytes">–</div></div>
+      <div class="stat"><div class="k">Receive rate</div><div class="v" id="m-rate">–</div></div>
+      <div class="stat"><div class="k">Media delivered (est.)</div><div class="v blue" id="m-media">–</div></div>
+      <div class="stat"><div class="k">Pipeline speed</div><div class="v blue" id="m-x">–</div></div>
+      <div class="stat">
+        <div class="k">TTS feed progress</div><div class="v" id="m-feed">–</div>
+        <div class="bar"><div id="m-feedbar"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Browser side · MSE playback</h2>
+    <div class="stats">
+      <div class="stat"><div class="k">Time to first audio</div><div class="v good" id="b-ttfa">–</div></div>
+      <div class="stat"><div class="k">Fetched</div><div class="v" id="b-bytes">–</div></div>
+      <div class="stat"><div class="k">Jitter buffer</div><div class="v" id="b-buffer">–</div></div>
+      <div class="stat"><div class="k">Playback state</div><div class="v" id="b-state">idle</div></div>
+    </div>
+    <p class="note">
+      "Transform first chunk" and "pipeline speed" are measured by the demo server on its
+      gRPC connection to Transonic — if those are fast while playback start is slow,
+      the delay is in the browser/network, not the service.  Playback uses MSE with a
+      ~300 ms jitter buffer; falls back to a plain <code>&lt;audio src&gt;</code>
+      when the codec is not MSE-supported.
+    </p>
+  </div>
+</div>
+
+<script>
+const JITTER_BUFFER_S = 0.3;
+const $ = (id) => document.getElementById(id);
+
+let catalog = null;
+let session = null;
+let abortController = null;
+let progressTimer = null;
+let playClickedAt = null;
+let ttfaShown = false;
+
+function fmtBitrate(output, bitrate) {
+  return output.mime === "audio/mpeg" ? `${bitrate} kbit/s` : `${bitrate / 1000} kbit/s`;
+}
+function fmtBytes(n) {
+  if (n >= 1048576) return (n / 1048576).toFixed(2) + " MiB";
+  if (n >= 1024) return (n / 1024).toFixed(1) + " KiB";
+  return n + " B";
+}
+function selectedOutput() {
+  return catalog.outputs.find((o) => o.id === $("output").value);
+}
+function refreshBitrates() {
+  const output = selectedOutput();
+  $("bitrate").innerHTML = output.bitrates
+    .map((b) => `<option value="${b}" ${b === output.default_bitrate ? "selected" : ""}>${fmtBitrate(output, b)}</option>`)
+    .join("");
+}
+
+async function load() {
+  catalog = await (await fetch("/api/catalog")).json();
+  $("sample").innerHTML = catalog.samples
+    .map((s) => `<option value="${s.id}">${s.label} (${s.duration_seconds.toFixed(1)} s)</option>`)
+    .join("");
+  $("output").innerHTML = catalog.outputs
+    .map((o) => `<option value="${o.id}">${o.label}</option>`)
+    .join("");
+  refreshBitrates();
+}
+
+///////////////////////////////////////////////////////////////////////////
+// server-side metrics polling
+///////////////////////////////////////////////////////////////////////////
+
+function startProgressPolling() {
+  stopProgressPolling();
+  progressTimer = setInterval(async () => {
+    try {
+      const response = await fetch(`/api/progress?session=${session}`);
+      if (!response.ok) return;
+      const p = await response.json();
+      $("m-ttfb").textContent =
+        p.transform_first_chunk_ms !== null ? `${p.transform_first_chunk_ms.toFixed(1)} ms` : "…";
+      $("m-bytes").textContent = `${fmtBytes(p.output_bytes)} · ${p.output_chunks} chunks`;
+      const elapsedS = p.elapsed_ms / 1000;
+      if (elapsedS > 0) {
+        $("m-rate").textContent = `${(p.output_bytes * 8 / elapsedS / 1000).toFixed(0)} kbit/s`;
+        const mediaS = p.output_bytes * 8 / p.bitrate_bps;
+        $("m-media").textContent = `${mediaS.toFixed(1)} s / ${p.source_seconds.toFixed(1)} s`;
+        $("m-x").textContent = `${(mediaS / elapsedS).toFixed(1)}× realtime`;
+      }
+      const feedPct = p.input_bytes_total ? (100 * p.input_bytes_sent / p.input_bytes_total) : 0;
+      $("m-feed").textContent = `${feedPct.toFixed(0)} %`;
+      $("m-feedbar").style.width = `${feedPct}%`;
+      if (p.state === "done" || p.state === "error") stopProgressPolling();
+    } catch (_) {}
+  }, 250);
+}
+function stopProgressPolling() {
+  if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+}
+
+///////////////////////////////////////////////////////////////////////////
+// MSE player
+///////////////////////////////////////////////////////////////////////////
+
+async function playMse(url, mime) {
+  const audio = $("audio");
+  const mediaSource = new MediaSource();
+  audio.src = URL.createObjectURL(mediaSource);
+  let fetchedBytes = 0;
+  let started = false;
+
+  await new Promise((resolve) => mediaSource.addEventListener("sourceopen", resolve, { once: true }));
+  const sourceBuffer = mediaSource.addSourceBuffer(mime);
+  const pending = [];
+  let streamEnded = false;
+
+  const pump = () => {
+    if (sourceBuffer.updating) return;
+    if (pending.length > 0) {
+      sourceBuffer.appendBuffer(pending.shift());
+    } else if (streamEnded && mediaSource.readyState === "open") {
+      try { mediaSource.endOfStream(); } catch (_) {}
+    }
+  };
+  sourceBuffer.addEventListener("updateend", () => {
+    // Start playback once the jitter buffer is filled.
+    if (!started && sourceBuffer.buffered.length > 0 &&
+        sourceBuffer.buffered.end(0) >= JITTER_BUFFER_S) {
+      started = true;
+      audio.play().catch(() => {});
+    }
+    pump();
+  });
+
+  abortController = new AbortController();
+  const response = await fetch(url, { signal: abortController.signal });
+  const reader = response.body.getReader();
+
+  const bufferTimer = setInterval(() => {
+    $("b-bytes").textContent = fmtBytes(fetchedBytes);
+    if (sourceBuffer.buffered.length > 0) {
+      const ahead = Math.max(0, sourceBuffer.buffered.end(0) - audio.currentTime);
+      $("b-buffer").textContent = `${ahead.toFixed(2)} s`;
+    }
+    if (streamEnded && pending.length === 0 && audio.ended) clearInterval(bufferTimer);
+  }, 200);
+  audio.addEventListener("ended", () => clearInterval(bufferTimer), { once: true });
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      fetchedBytes += value.byteLength;
+      pending.push(value);
+      pump();
+    }
+  } catch (_) { /* aborted */ }
+  streamEnded = true;
+  pump();
+}
+
+function playDirect(url) {
+  const audio = $("audio");
+  audio.src = url;
+  audio.play().catch(() => {});
+}
+
+function play() {
+  stop();
+  session = crypto.randomUUID();
+  const output = selectedOutput();
+  const params = new URLSearchParams({
+    sample: $("sample").value,
+    output: $("output").value,
+    bitrate: $("bitrate").value,
+    pace: $("pace").value,
+    session,
+  });
+  const url = `/stream?${params}`;
+  $("url").textContent = url;
+  ["m-ttfb","m-bytes","m-rate","m-media","m-x","m-feed","b-ttfa","b-bytes","b-buffer"]
+    .forEach((id) => { $(id).textContent = "…"; });
+  $("m-feedbar").style.width = "0%";
+  $("b-state").textContent = "connecting";
+  playClickedAt = performance.now();
+  ttfaShown = false;
+  $("stop").disabled = false;
+
+  startProgressPolling();
+  const useMse = window.MediaSource && MediaSource.isTypeSupported(output.mime);
+  if (useMse) {
+    playMse(url, output.mime);
+  } else {
+    playDirect(url);
+  }
+}
+
+function stop() {
+  if (abortController) { abortController.abort(); abortController = null; }
+  stopProgressPolling();
+  const audio = $("audio");
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+  $("b-state").textContent = "stopped";
+  $("stop").disabled = true;
+}
+
+$("play").addEventListener("click", play);
+$("stop").addEventListener("click", stop);
+$("output").addEventListener("change", refreshBitrates);
+
+const audio = $("audio");
+audio.addEventListener("playing", () => {
+  if (!ttfaShown && playClickedAt !== null) {
+    $("b-ttfa").textContent = `${Math.round(performance.now() - playClickedAt)} ms`;
+    ttfaShown = true;
+  }
+  $("b-state").textContent = "playing";
+});
+audio.addEventListener("waiting", () => { $("b-state").textContent = "buffering"; });
+audio.addEventListener("ended", () => { $("b-state").textContent = "finished"; $("stop").disabled = true; });
+audio.addEventListener("error", () => {
+  if (audio.src) $("b-state").textContent = "error";
+});
+
+load();
+</script>
+</body>
+</html>

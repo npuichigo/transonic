@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package transonic.v1;
+
+// Audio stream properties.
+// Message to include all required attributes of an audio stream.
+message AudioProperties {
+    string encoding = 1;
+    uint32 sample_rate = 2;
+    string sample_type = 3;
+    uint32 channels = 4;
+}
+
+message MediaProperties {
+
+    oneof properties {
+        AudioProperties audio_properties = 1;
+        }
+}

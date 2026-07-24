@@ -1,0 +1,60 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/transonic-proto",
+    "crates/transonic-meta",
+    "crates/transonic-core",
+    "crates/transonic-plugins",
+    "crates/transonic-server",
+    "crates/transonic-client",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Transonic: GStreamer media transformation pipelines as a gRPC service"
+
+[workspace.dependencies]
+transonic-proto = { path = "crates/transonic-proto" }
+transonic-meta = { path = "crates/transonic-meta" }
+transonic-core = { path = "crates/transonic-core" }
+transonic-plugins = { path = "crates/transonic-plugins" }
+
+# gstreamer bindings
+gstreamer = { version = "0.23", features = ["v1_20"] }
+gstreamer-app = { version = "0.23", features = ["v1_20"] }
+gstreamer-audio = { version = "0.23", features = ["v1_20"] }
+gstreamer-base = { version = "0.23", features = ["v1_20"] }
+glib = "0.20"
+
+# grpc / protobuf
+tonic = "0.12"
+tonic-build = "0.12"
+prost = "0.13"
+
+# async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+async-stream = "0.3"
+async-trait = "0.1"
+futures = "0.3"
+
+# utilities
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+tempfile = "3"
+clap = { version = "4", features = ["derive", "env"] }
+rand = "0.8"
+
+# observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+prometheus = "0.13"
+axum = "0.7"
+
+[profile.release]
+lto = "thin"

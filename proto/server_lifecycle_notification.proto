@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package transonic.v1;
+
+// The server lifecycle notification type
+enum ServerLifecycleNotificationType {
+    // server is shutting down, so client can potentially handle and restart any requests in progress
+    // in case the server eventually shuts down non-gracefully.
+    SHUTTING_DOWN = 0;
+}
+
+// Response which indicates that the server wants to send some lifecycle related notification
+// to the client.
+message ServerLifecycleNotification {
+    // The type of server lifecycle notification
+    ServerLifecycleNotificationType notification_type = 1;
+}

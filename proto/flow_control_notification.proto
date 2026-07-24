@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package transonic.v1;
+
+// The flow control notification type
+enum FlowControlNotificationType {
+    // server is getting data faster than it can handle and client should stop sending more
+    // until it gets a NEED_DATA notification
+    ENOUGH_DATA = 0;
+    // server is free to consume more data again and client can start sending more
+    NEED_DATA = 1;
+}
+
+// Response which indicates that the server wants to send some flow control related notification
+// to the client. This is applicable when FlowcontrolEnforcementPolicy is set to NOTIFY
+message FlowControlNotification {
+    // The type of flow control notification
+    FlowControlNotificationType notification_type = 1;
+}

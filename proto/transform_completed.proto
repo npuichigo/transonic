@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+import "termination_reason.proto";
+
+package transonic.v1;
+
+// last response message sent back to client containing
+// a report about the call
+message TransformCompleted {
+    // reason of stream processing end
+    TerminationReason termination_reason = 1;
+    // description of termination_reason
+    string termination_message = 2;
+}

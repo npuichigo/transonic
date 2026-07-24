@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package transonic.v1;
+
+enum PipelineType {
+    // Dynamic pipeline
+    DYNAMIC = 0;
+}
+
+// Defines gstreamer bin (collection of plugins) that could be used in a Transform request
+message PipelineBin {
+    // Type (only DYNAMIC currently supported)
+    PipelineType type = 1;
+
+    // gstreamer specification (string specifying chain of gstreamer plugins)
+    string specs = 2;
+
+    // Indicates whether the output bin is streamable or not
+    // Applies only to output bins
+    bool non_streamable = 3;
+}
+
+// Pre-defined pipeline definitions
+message PipelineDefinition {
+    // Input bin definitions (indexed by unique id used to specify bin spec)
+    map<string, PipelineBin> input = 1;
+
+    // Intermediate bin definitions (indexed by unique id used to specify bin spec)
+    map<string, PipelineBin> intermediate = 2;
+
+    // Output bin definitions (indexed by unique id used to specify bin spec)
+    map<string, PipelineBin> output = 3;
+}

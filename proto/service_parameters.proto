@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+import "flow_control_enforcement_policy.proto";
+
+package transonic.v1;
+
+// Client metadata enumeration (is this needed?)
+enum ClientMetadata {
+    // Request identification (used in logging)
+    REQUEST_ID = 0;
+}
+
+// Parameter
+message ServiceParameter
+{
+    oneof value {
+        // Pipeline output rate
+        // rate == 1.0 => realtime, 0 < rate < 1.0 => slower than realtime, rate > 1.0 => faster than realtime
+        // rate <= 0 => process as fast as possible
+        double rate = 1;
+
+        // Policy used to enforce caller rate violation
+        FlowControlEnforcementPolicy flow_control_enforcement_policy = 2;
+
+        // Maximum media duration to process (in milliseconds)
+        uint32 length_limit_milliseconds = 3;
+
+        // Maximum number of bytes to process before pipeline starts
+        // (used to abort streams where formats must be parsed from headers in payload)
+        uint32 start_tolerance_bytes = 4;
+
+        // Maximum time in milliseconds to wait for next media payload
+        uint32 read_timeout_milliseconds = 5;
+
+        // Input bytes to buffer
+        uint32 pipeline_input_buffer = 6;
+
+        // Output bytes to buffer
+        uint32 pipeline_output_buffer = 7;
+
+        // Indicates that the output is to be streamed or if it should be sent out only once all the pipeline processing is complete
+        bool stream_output = 8;
+
+        // Output audio to buffer in milliseconds
+        uint32 pipeline_output_buffer_milliseconds = 9;
+    }
+}
+
+// Default, max and min values for service parameter
+message ServiceParameterLimits
+{
+    // Parameter description
+    string description = 1;
+
+    // Default parameter value
+    // Default ServiceParameter index should be used to validate all other values for any given ServiceParameterId)
+    ServiceParameter default = 2;
+
+    // Minimum parameter value - if unspecified, don't check
+    ServiceParameter min = 4;
+
+    // Maximum parameter value - if unspecified, don't check
+    ServiceParameter max = 8;
+}

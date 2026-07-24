@@ -1,0 +1,39 @@
+[package]
+name = "transonic-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command line client and examples for the Transonic transform service"
+
+[[bin]]
+name = "transonic-client"
+path = "src/main.rs"
+
+[dependencies]
+transonic-proto = { workspace = true }
+
+tonic = { workspace = true }
+prost = { workspace = true }
+
+tokio = { workspace = true }
+tokio-stream = "0.1"
+async-stream = { workspace = true }
+bytes = { workspace = true }
+
+clap = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Additional dependencies used by the `demo` example (the TTS streaming web
+# demo).  Examples may use dev-dependencies; they do not affect the client
+# binary.
+[dev-dependencies]
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"

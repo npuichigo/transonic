@@ -1,0 +1,25 @@
+[package]
+name = "transonic-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pipeline engine: configuration, pipeline templates and the piped transform processor"
+
+[dependencies]
+transonic-meta = { workspace = true }
+
+gstreamer = { workspace = true }
+gstreamer-app = { workspace = true }
+glib = { workspace = true }
+
+tokio = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+bytes = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }
+tempfile = { workspace = true }
+tracing = { workspace = true }

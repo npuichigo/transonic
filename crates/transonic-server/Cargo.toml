@@ -1,0 +1,36 @@
+[package]
+name = "transonic-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Transonic media transform service: gRPC server binary"
+
+[[bin]]
+name = "transonic"
+path = "src/main.rs"
+
+[dependencies]
+transonic-proto = { workspace = true }
+transonic-core = { workspace = true }
+transonic-plugins = { workspace = true }
+
+gstreamer = { workspace = true }
+
+tonic = { workspace = true }
+prost = { workspace = true }
+
+tokio = { workspace = true }
+tokio-stream = "0.1"
+async-trait = { workspace = true }
+futures = { workspace = true }
+bytes = { workspace = true }
+
+clap = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+prometheus = { workspace = true }
+axum = { workspace = true }
+
+[dev-dependencies]
+tokio-stream = { version = "0.1", features = ["net"] }

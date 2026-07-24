@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+import "channel_payload.proto";
+import "service_parameters.proto";
+
+package transonic.v1;
+
+// Transform request configuration (must be first message in the request)
+// channel_type for input and output channels must be pre-defined key in ServiceConfiguration parameters table
+message TransformConfig {
+    // Name of pre-defined pipeline to use for this request (must have been already defined in ServiceConfiguration)
+    string pipeline_name = 1;
+
+    // Input channel list
+    // For concat operation, input channels should be in the same order they will be included in output
+    repeated ChannelSpecifier inputs = 2;
+
+    // Output channel list
+    repeated ChannelSpecifier outputs = 4;
+
+    // Service parameter overrides
+    repeated ServiceParameter parameter_overrides = 16;
+}
