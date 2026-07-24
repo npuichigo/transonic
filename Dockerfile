@@ -2,6 +2,7 @@
 FROM rust:1-bookworm AS build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
         pkg-config \
         protobuf-compiler \
         libgstreamer1.0-dev \

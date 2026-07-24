@@ -32,5 +32,12 @@ tracing-subscriber = { workspace = true }
 prometheus = { workspace = true }
 axum = { workspace = true }
 
+# jemalloc: a scalable multithreaded allocator.  On a high-core host glibc's
+# per-thread malloc arenas retain a large resident set; jemalloc keeps a
+# tighter footprint and (with background_threads) returns freed pages to the
+# OS.  Set as the process global allocator in main.rs.  Not available on MSVC.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { version = "0.6", features = ["background_threads"] }
+
 [dev-dependencies]
 tokio-stream = { version = "0.1", features = ["net"] }
