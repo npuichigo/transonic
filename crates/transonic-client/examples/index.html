@@ -147,8 +147,13 @@ let catalog = null;
 let session = null;
 let abortController = null;
 let progressTimer = null;
+let bufferTimer = null;
 let playClickedAt = null;
 let ttfaShown = false;
+// Incremented on every play()/stop(); async writers capture their generation
+// and bail once superseded, so repeated Synthesize presses don't leave stale
+// timers/loops racing on the same metric elements.
+let playGen = 0;
 
 function fmtBitrate(output, bitrate) {
   return output.mime === "audio/mpeg" ? `${bitrate} kbit/s` : `${bitrate / 1000} kbit/s`;
@@ -183,13 +188,15 @@ async function load() {
 // server-side metrics polling
 ///////////////////////////////////////////////////////////////////////////
 
-function startProgressPolling() {
+function startProgressPolling(gen) {
   stopProgressPolling();
   progressTimer = setInterval(async () => {
+    if (gen !== playGen) { stopProgressPolling(); return; }
     try {
       const response = await fetch(`/api/progress?session=${session}`);
-      if (!response.ok) return;
+      if (gen !== playGen || !response.ok) return;
       const p = await response.json();
+      if (gen !== playGen) return;
       $("m-ttfb").textContent =
         p.transform_first_chunk_ms !== null ? `${p.transform_first_chunk_ms.toFixed(1)} ms` : "…";
       $("m-bytes").textContent = `${fmtBytes(p.output_bytes)} · ${p.output_chunks} chunks`;
@@ -215,20 +222,23 @@ function stopProgressPolling() {
 // MSE player
 ///////////////////////////////////////////////////////////////////////////
 
-async function playMse(url, mime) {
+async function playMse(url, mime, gen) {
   const audio = $("audio");
   const mediaSource = new MediaSource();
+  const controller = new AbortController();
+  abortController = controller;
   audio.src = URL.createObjectURL(mediaSource);
   let fetchedBytes = 0;
   let started = false;
 
   await new Promise((resolve) => mediaSource.addEventListener("sourceopen", resolve, { once: true }));
+  if (gen !== playGen) return;
   const sourceBuffer = mediaSource.addSourceBuffer(mime);
   const pending = [];
   let streamEnded = false;
 
   const pump = () => {
-    if (sourceBuffer.updating) return;
+    if (gen !== playGen || sourceBuffer.updating) return;
     if (pending.length > 0) {
       sourceBuffer.appendBuffer(pending.shift());
     } else if (streamEnded && mediaSource.readyState === "open") {
@@ -236,6 +246,7 @@ async function playMse(url, mime) {
     }
   };
   sourceBuffer.addEventListener("updateend", () => {
+    if (gen !== playGen) return;
     // Start playback once the jitter buffer is filled.
     if (!started && sourceBuffer.buffered.length > 0 &&
         sourceBuffer.buffered.end(0) >= JITTER_BUFFER_S) {
@@ -245,24 +256,28 @@ async function playMse(url, mime) {
     pump();
   });
 
-  abortController = new AbortController();
-  const response = await fetch(url, { signal: abortController.signal });
+  const response = await fetch(url, { signal: controller.signal });
+  if (gen !== playGen) return;
   const reader = response.body.getReader();
 
-  const bufferTimer = setInterval(() => {
+  if (bufferTimer) clearInterval(bufferTimer);
+  bufferTimer = setInterval(() => {
+    if (gen !== playGen) { clearInterval(bufferTimer); return; }
     $("b-bytes").textContent = fmtBytes(fetchedBytes);
     if (sourceBuffer.buffered.length > 0) {
       const ahead = Math.max(0, sourceBuffer.buffered.end(0) - audio.currentTime);
       $("b-buffer").textContent = `${ahead.toFixed(2)} s`;
     }
-    if (streamEnded && pending.length === 0 && audio.ended) clearInterval(bufferTimer);
+    if (streamEnded && pending.length === 0 && audio.ended) {
+      clearInterval(bufferTimer);
+      bufferTimer = null;
+    }
   }, 200);
-  audio.addEventListener("ended", () => clearInterval(bufferTimer), { once: true });
 
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done || gen !== playGen) break;
       fetchedBytes += value.byteLength;
       pending.push(value);
       pump();
@@ -280,6 +295,7 @@ function playDirect(url) {
 
 function play() {
   stop();
+  const gen = playGen;
   session = crypto.randomUUID();
   const output = selectedOutput();
   const params = new URLSearchParams({
@@ -299,18 +315,21 @@ function play() {
   ttfaShown = false;
   $("stop").disabled = false;
 
-  startProgressPolling();
+  startProgressPolling(gen);
   const useMse = window.MediaSource && MediaSource.isTypeSupported(output.mime);
   if (useMse) {
-    playMse(url, output.mime);
+    playMse(url, output.mime, gen);
   } else {
     playDirect(url);
   }
 }
 
 function stop() {
+  // Invalidate every in-flight async writer from the current generation.
+  playGen++;
   if (abortController) { abortController.abort(); abortController = null; }
   stopProgressPolling();
+  if (bufferTimer) { clearInterval(bufferTimer); bufferTimer = null; }
   const audio = $("audio");
   audio.pause();
   audio.removeAttribute("src");
