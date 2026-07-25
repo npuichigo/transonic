@@ -147,6 +147,13 @@ Or build the container image (bundles all runtime codecs):
 docker build -t transonic .
 ```
 
+Tagged releases (`git tag v0.1.0 && git push origin v0.1.0`) publish a
+production image to `ghcr.io/npuichigo/transonic` via GitHub Actions:
+
+```sh
+docker pull ghcr.io/npuichigo/transonic:latest
+```
+
 ## Running
 
 ```sh
