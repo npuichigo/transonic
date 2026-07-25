@@ -314,11 +314,11 @@ The test suite covers:
   job validation, the VAD and the health moving-average filter;
 * engine integration tests (`transonic-core/tests/engine.rs`) covering
   passthrough, concat, file-sink draining, flow control and the error
-  taxonomy — the counterpart of `test/piped_transform.cpp`;
-* element tests (`transonic-plugins/tests/elements.rs`) — the counterpart of
-  the `*Tests.cpp` plugin suites;
-* end-to-end gRPC tests (`transonic-server/tests/grpc.rs`) — the counterpart
-  of `test/grpc.cpp`.
+  taxonomy;
+* element tests (`transonic-plugins/tests/elements.rs`) for the custom
+  GStreamer elements;
+* end-to-end gRPC tests (`transonic-server/tests/grpc.rs`) that start a real
+  server on an ephemeral port and drive it over the wire.
 
 Integration tests require a GStreamer installation (core elements are
 sufficient for most of them).

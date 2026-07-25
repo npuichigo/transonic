@@ -1,6 +1,6 @@
-//! Integration tests for the custom GStreamer elements, mirroring the scope
-//! of the original `StartSilenceCutterTests.cpp` / `BackgroundAudioMixerTests.cpp`
-//! suites (plus coverage for `demuxtomultichannel` and `passthroughdecoder`).
+//! Integration tests for the custom GStreamer elements: the leading-silence
+//! trimmers, the background-audio mixer, `demuxtomultichannel` and
+//! `passthroughdecoder`.
 
 use std::sync::Once;
 

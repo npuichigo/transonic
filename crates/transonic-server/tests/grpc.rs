@@ -1,5 +1,4 @@
-//! End-to-end gRPC tests, mirroring the scope of the original
-//! `test/grpc.cpp` suite: a real server is started on an ephemeral port and
+//! End-to-end gRPC tests: a real server is started on an ephemeral port and
 //! exercised through a real tonic client.
 
 use std::sync::atomic::AtomicBool;

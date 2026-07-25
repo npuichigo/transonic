@@ -328,8 +328,7 @@ pub struct RootConfig {
 
 impl Default for RootConfig {
     fn default() -> Self {
-        // These standard values match the C++ `basic_ranged_parameter_config`
-        // template instantiations.
+        // The built-in defaults for the ranged service parameters.
         RootConfig {
             pipelines: HashMap::new(),
             input_buffer_size: RangedParam {

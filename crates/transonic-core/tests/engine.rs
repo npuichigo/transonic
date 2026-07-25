@@ -1,5 +1,4 @@
-//! Integration tests for the piped transform engine, mirroring the scope of
-//! the original `test/piped_transform.cpp` suite.
+//! Integration tests for the piped transform engine.
 //!
 //! These tests require a working GStreamer installation (core elements
 //! only, unless noted otherwise).
